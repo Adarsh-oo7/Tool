@@ -12,7 +12,12 @@ class FieldVisit(models.Model):
     lead       = models.ForeignKey('leads.Lead', on_delete=models.CASCADE, related_name='field_visits')
     staff      = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
                                    null=True, related_name='field_visits')
-    branch     = models.ForeignKey('branches.Branch', on_delete=models.CASCADE, related_name='field_visits')
+    branch = models.ForeignKey(
+    'branches.Branch',
+    null=True, blank=True,       # ← add these two
+    on_delete=models.SET_NULL,   # ← change CASCADE → SET_NULL
+    related_name='field_visits'
+)
     start_lat  = models.DecimalField(max_digits=10, decimal_places=7)
     start_lng  = models.DecimalField(max_digits=10, decimal_places=7)
     status     = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')

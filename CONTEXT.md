@@ -1,1228 +1,737 @@
+# Bindu Jewellery Backend — AI Code Generation Master Prompt
 
-understand this projet very well
+> **Use this document with any AI IDE (Cursor, Windsurf, Copilot, Claude, etc.)**
+> Paste the relevant section as your prompt when generating each file.
+> All code targets: **Django 5.0.6 · DRF 3.15 · Python 3.13 · Development environment**
+> Production changes (S3, RDS, Nginx) are marked separately — do not generate them now.
 
-Bindu_Jewellery_Architecture_Blueprint.docx
+***
 
-Here's a deep breakdown of the Bindu Jewellery Business Growth System — a full-stack CRM/business management platform built specifically for a jewellery business operating across Trivandrum and Kollam.
+## ⚡ Master Context (Paste This First — Every Session)
 
-What This Project Is
-Bindu Jewellery is a custom business growth and CRM system — not an e-commerce store, but an internal operations platform for managing staff, leads, sales, field visits, and marketing campaigns across two physical jewellery showroom branches.
+```
+Project: Bindu Jewellery Business Growth System
+Stack: Django 5.0.6, DRF 3.15, PostgreSQL (local), Redis (local), Celery 5.3
+Python: 3.13
+Settings module: bindu_jewellery_backend.settings.development
+Auth: JWT via djangorestframework-simplejwt, AUTH_USER_MODEL = 'accounts.User'
+Celery app: bindu_jewellery_backend (defined in celery_config.py)
+Task package: celery_app.tasks
 
-Think of it as a private SaaS tool built for one company, covering everything from lead tracking to GPS attendance to WhatsApp marketing.
+Roles (exact strings): owner | manager | staff | telecaller | field
+Branches: Trivandrum, Kollam
+Segments: bridal | daily | investment | diamond
 
-Tech Stack at a Glance
-Layer	Technology
-Backend	Django REST Framework (Python)
-Web Frontend	React.js + Vite + Tailwind CSS
-Mobile App	React Native (Expo)
-Database	PostgreSQL (AWS RDS)
-Queue / Cache	Celery + Redis (AWS ElastiCache)
-File Storage	AWS S3
-Notifications	Firebase FCM (push)
-Marketing	WhatsApp Business API
-Deployment	AWS EC2 + Docker + Vercel + Expo EAS
-Auth	JWT (djangorestframework-simplejwt)
+Rules:
+- Development only — no S3, no RDS, no Gunicorn, no Sentry
+- All model imports inside Celery task function bodies (no top-level imports)
+- Use get_object_or_404 in views, never raw .get()
+- Soft delete only — never user.delete(), set is_active=False
+- All list views must use StandardPagination (PAGE_SIZE=20)
+- Role-based queryset filtering on every ViewSet
+- password field: write_only=True in all serializers, never readable
+- Related name for campaign→leads is campaign_leads (not leads)
+- Campaign date fields: scheduled_at, sent_at (no start_date / end_date)
+- bind=True, max_retries=3 on every Celery task
+- try/except around every WhatsApp send — log error to CampaignLead.error
+```
 
-Business Structure
-The system is built around this hierarchy:
+***
 
-1 Company → 2 Branches (Trivandrum, Kollam)
+## FILE 1 — `core/pagination.py`
 
-Each branch has 4 Segments: Bridal, Daily Wear, Investment Gold, Diamond
+```
+Generate core/pagination.py for the Bindu Jewellery Django backend.
 
-5 User Roles: Owner, Branch Manager, Staff/Shop, Telecaller, Field Staff
+Create:
+- StandardPagination(PageNumberPagination)
+  - page_size = 20
+  - page_size_query_param = 'page_size'
+  - max_page_size = 100
+  - Returns: {"count": N, "next": url, "previous": url, "results": [...]}
+```
 
-Core Modules (Django Apps)
-Each Django app handles a distinct domain:
+***
 
-accounts — JWT auth, RBAC, user profiles with roles
+## FILE 2 — `core/permissions.py`
 
-branches — Company → Branch → Segment hierarchy
+```
+Generate core/permissions.py for the Bindu Jewellery Django backend.
 
-leads — Full lead lifecycle: new → contacted → interested → visit scheduled → converted → lost, with an AI buying-intent score field
+Create these DRF BasePermission subclasses:
+- IsOwner         → user.role == 'owner'
+- IsManager       → user.role in ['owner', 'manager']
+- IsStaff         → user.role in ['owner', 'manager', 'staff', 'telecaller', 'field']
+- IsSameBranch    → user.branch == obj.branch OR user.role == 'owner'
+- IsOwnerOrManager (alias for IsManager)
 
-calls — Telecaller call logging with outcomes and stats
+All classes: set message = '...' with a helpful error string.
+```
 
-field_visits — GPS tracking, live location updates every 30s, visit reports
+***
 
-attendance — GPS + photo check-in, manager approvals
+## FILE 3 — `core/exceptions.py`
 
-sales — Sale entries and revenue per branch/segment
+```
+Generate core/exceptions.py for the Bindu Jewellery Django backend.
 
-campaigns — WhatsApp blast campaigns with ROI tracking
+Create a custom DRF exception handler:
+- Function: custom_exception_handler(exc, context)
+- Wraps DRF's default handler
+- Always returns JSON: {"error": true, "message": "...", "details": {...}}
+- Handles: ValidationError, NotFound, PermissionDenied, AuthenticationFailed
+- Register in settings: EXCEPTION_HANDLER = 'core.exceptions.custom_exception_handler'
+```
 
-notifications — Firebase push + in-app alerts
+***
 
-reports — EOD reports, dashboards, AI suggestions via Celery
+## FILE 4 — `accounts/serializers.py`
 
-Role-Based Access (RBAC)
-Each role sees a strictly scoped view of data:
+```
+Generate accounts/serializers.py for the Bindu Jewellery Django backend.
 
-Role	Access Scope
-Owner	All branches, all reports, campaign creation, full staff management
-Branch Manager	Own branch — assign leads, approve check-ins, monitor staff GPS
-Staff / Shop	Own assigned leads — log calls, record sales, follow-ups
-Telecaller	Call queue — initiate calls, log outcomes
-Field Staff	GPS visits, check-ins, location-tracked customer visits
-Key Features Deep Dive
-Lead Pipeline with AI Scoring — Every lead has a score field (AI buying intent, re-calculated via Celery) and passes through 6 stages. Leads are filtered by role: Owner sees all, Manager sees branch leads, Staff sees only assigned leads.
+Models available: User (AUTH_USER_MODEL), SubManagerPermission
+User fields: email, phone, role, branch(FK), is_active, full_name,
+             date_of_birth, join_date, employee_id, staff_type,
+             staff_type_label, address, emergency_contact_name,
+             emergency_contact_phone, notes
 
-GPS Field Visit Tracking — The mobile app uses expo-location to start a visit, then pushes GPS coordinates to the server every 30 seconds in the background via expo-task-manager. Managers can view a live map on the web dashboard.
+Create:
+1. StaffListSerializer — lightweight: id, full_name, role, branch name, phone
+2. UserSerializer — full read serializer, NO password, branch as nested object
+3. UserCreateSerializer — write serializer
+   - Fields: email, phone, role, branch, password, full_name
+   - password: write_only=True, min length 8
+   - create(): uses user.set_password(), never stores plain text
+4. UserUpdateSerializer — partial update, no password, no role change
+5. SubManagerPermissionSerializer — user(id), permission, branch(id)
+6. ChangePasswordSerializer — old_password, new_password, confirm_password
+   - validate(): checks old_password correct, new != old, confirm matches
+```
 
-WhatsApp Campaign Engine — Built on the Meta WhatsApp Business API (Graph API v19.0). Campaigns are created on the web, then a Celery @shared_task sends templated messages to all active campaign leads asynchronously — never synchronously blocking the API.
+***
 
-Celery Background Tasks — Handles: auto follow-up reminders (Day 1/3/7), daily EOD report generation, WhatsApp blasts, lead score recalculation, Firebase push dispatch, and lost lead recovery triggers.
+## FILE 5 — `accounts/views.py`
 
-Monorepo Structure
-The entire project lives in one repo bindu-jewellery/ with three independent apps:
+```
+Generate accounts/views.py for the Bindu Jewellery Django backend.
 
-text
-bindu-jewellery/
-├── backend/      # Django REST API
-├── frontend/     # React.js web dashboard (Vercel)
-├── mobile/       # React Native staff app (Expo EAS)
-├── docker-compose.yml
-└── .github/workflows/  # CI/CD pipelines
-Deployment Architecture
-Backend: Docker container on AWS EC2 (t3.medium) behind Nginx + ELB, with auto-scaling
+Import from: core.permissions, accounts.serializers, accounts.models
 
-Frontend: Vercel with auto-deploy on main branch push
+Create:
+1. UserViewSet(ModelViewSet)
+   - list:     IsManager — owner sees all, manager sees own branch only
+   - retrieve: IsManager or self
+   - create:   IsOwner only
+   - update:   IsOwner only
+   - destroy:  IsOwner only → soft delete (is_active=False), NOT user.delete()
+   - Filter by: role, branch, is_active via query params
 
-Mobile: Expo EAS Build → OTA updates + TestFlight/Play Store releases
+2. SetRoleView(APIView)
+   - POST /accounts/users/{id}/set-role/
+   - IsOwner only
+   - Body: {"role": "manager"}
+   - Validates role is one of the 5 valid choices
 
-CI/CD: GitHub Actions — runs tests on develop, deploys to AWS ECS on main
+3. StaffByBranchView(ListAPIView)
+   - GET /accounts/staff/?branch_id=1
+   - IsManager
+   - Returns StaffListSerializer
 
-Security Highlights
-Notable security implementations:
+4. SubManagerPermissionViewSet(ModelViewSet)
+   - IsOwner for create/destroy, IsManager for list/retrieve
+   - Filter by user and branch
 
-JWT access tokens expire in 60 minutes, refresh tokens in 7 days with rotation + blacklisting
+5. ChangePasswordView(APIView)
+   - POST /accounts/change-password/
+   - Any authenticated user (own password only)
+   - Uses ChangePasswordSerializer
+```
 
-GPS spoofing detection via server-side speed checks
+***
 
-S3 presigned URLs for attendance photos (S3 not exposed directly)
+## FILE 6 — `accounts/urls.py`
 
-Rate limiting on login, OTP, and sensitive endpoints via django-ratelimit
+```
+Generate accounts/urls.py for the Bindu Jewellery Django backend.
 
-AWS Secrets Manager for production secrets (no .env in version control)
+Register with DefaultRouter:
+- UserViewSet → 'users'
+- SubManagerPermissionViewSet → 'sub-permissions'
 
-Summary in One Line
-This is a production-grade internal CRM for a 2-branch jewellery business — combining lead management, staff GPS tracking, WhatsApp marketing, and analytics into one unified system built with Django + React + React Native.
+Extra paths:
+- POST users/{id}/set-role/ → SetRoleView
+- GET  staff/ → StaffByBranchView
+- POST change-password/ → ChangePasswordView
 
-Prepared using Claude Sonnet 4.6 Thinking
-now complte prject app set up for backend first
-:\\Users\\adars\\Desktop\\bectree\\code\\Project1>
-Completed 4 steps
-Answer skipped
-Prepared using Claude Sonnet 4.6 Thinking
-create it by proper code like startapp , startproject,etc
-Completed 3 steps
-Answer skipped
-Prepared using Claude Sonnet 4.6 Thinking
-from django.db import models
+Include in root urls.py under: api/v1/accounts/
+```
 
+***
 
-class Company(models.Model):
-name = models.CharField(max_length=200)
-logo = models.ImageField(upload_to='company/', null=True, blank=True)
-address = models.TextField(blank=True)
-phone = models.CharField(max_length=15, blank=True)
-email = models.EmailField(blank=True)
-created_at = models.DateTimeField(auto_now_add=True)
+## FILE 7 — `branches/serializers.py`
 
-class Meta:
-verbose_name_plural = 'Companies'
+```
+Generate branches/serializers.py for the Bindu Jewellery Django backend.
 
-def __str__(self): return self.name
+Models: Company, Branch, Segment
 
+Create:
+1. CompanySerializer — id, name
+2. SegmentSerializer — id, name, branch(id)
+3. BranchSerializer — id, name, company(nested), location, lat, lng,
+                      segments(nested list of SegmentSerializer)
+4. BranchListSerializer — lightweight: id, name, location only
+```
 
-class Branch(models.Model):
-company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='branches')
-name = models.CharField(max_length=100) # e.g., Trivandrum, Kollam
-address = models.TextField()
-phone = models.CharField(max_length=15, blank=True)
-lat = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
-lng = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
-is_active = models.BooleanField(default=True)
-created_at = models.DateTimeField(auto_now_add=True)
+***
 
-class Meta:
-verbose_name_plural = 'Branches'
-ordering = ['name']
+## FILE 8 — `branches/views.py` + `branches/urls.py`
 
-def __str__(self): return f'{self.name} — {self.company.name}'
+```
+Generate branches/views.py and branches/urls.py for Bindu Jewellery.
 
+Views:
+1. BranchViewSet(ModelViewSet)
+   - list/retrieve: IsManager
+   - create/update/destroy: IsOwner
+   - Owner sees all branches, Manager sees own branch only
 
-class Segment(models.Model):
-SEGMENT_CHOICES = [
-('bridal', 'Bridal Jewellery'),
-('daily_wear', 'Daily Wear'),
-('investment', 'Investment Gold'),
-('diamond', 'Diamond Collection'),
-]
-branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name='segments')
-name = models.CharField(max_length=50, choices=SEGMENT_CHOICES)
-description= models.TextField(blank=True)
-is_active = models.BooleanField(default=True)
+2. SegmentViewSet(ModelViewSet)
+   - list: IsManager, filter by ?branch_id=
+   - create/update/destroy: IsOwner
 
-class Meta:
-unique_together = ['branch', 'name']
+URLs — register under api/v1/branches/
+```
 
-def __str__(self): return f'{self.get_name_display()} @ {self.branch.name}'
+***
 
-✅ Perfect model! The jewellery-specific SEGMENT_CHOICES (Bridal, Daily Wear, Investment Gold, Diamond) is exactly right for Bindu. unique_together on [branch, name] is also a smart constraint.
+## FILE 9 — `leads/serializers.py`
 
-Now run check:
+```
+Generate leads/serializers.py for the Bindu Jewellery Django backend.
 
-powershell
+Models: Lead, LeadActivity, FollowUp
+
+Lead stage choices (exact): new, contacted, interested, scheduled, converted, lost
+Lead source choices (exact): walkin, instagram, facebook, website, referral
+
+Create:
+1. LeadSerializer — all fields, score and created_at are read_only
+2. LeadCreateSerializer — omit score, created_at, branch (auto-set in view)
+3. LeadUpdateSerializer — only: stage, assigned_to, budget, notes
+4. LeadActivitySerializer — id, lead(id), action, note, created_by(name), created_at
+5. FollowUpSerializer — id, lead(id), scheduled_at, note, completed, created_by
+   - validate_scheduled_at(): must be in the future
+```
+
+***
+
+## FILE 10 — `leads/views.py` + `leads/urls.py`
+
+```
+Generate leads/views.py and leads/urls.py for the Bindu Jewellery Django backend.
+
+Views:
+1. LeadViewSet(ModelViewSet)
+   - get_queryset() role-based:
+     owner     → Lead.objects.all()
+     manager   → filter(branch=user.branch)
+     others    → filter(assigned_to=user)
+   - perform_create(): auto-set branch=request.user.branch,
+                       trigger schedule_followup.delay(lead.id)
+   - Filter fields: stage, segment, branch, assigned_to, source
+   - Custom action: PATCH /{id}/stage/ → update stage only
+
+2. FollowUpViewSet(ModelViewSet)
+   - filter by lead, completed
+   - perform_create: auto-set created_by=request.user
+
+3. LeadActivityListView(ListAPIView)
+   - GET /leads/{lead_id}/activity/
+   - Read-only, ordered by -created_at
+
+URLs — register under api/v1/leads/
+```
+
+***
+
+## FILE 11 — `calls/serializers.py` + `calls/views.py` + `calls/urls.py`
+
+```
+Generate the full calls app for the Bindu Jewellery Django backend.
+
+Models (generate if not existing):
+- CallLog: lead(FK), called_by(FK User), outcome(choices: interested/callback/
+  not_interested/no_answer/converted), duration_seconds, notes, created_at
+- CallOutcome: (can be inline as choices on CallLog)
+
+Serializers:
+1. CallLogSerializer — all fields, called_by read-only
+2. CallStatsSerializer — staff name, total_calls, converted, not_interested counts
+
+Views:
+1. CallLogViewSet
+   - create: telecaller/staff — auto-set called_by=request.user
+   - list: manager sees branch calls, telecaller sees own calls
+   - Custom action: GET /calls/stats/ → per-staff call stats for manager
+
+URLs — register under api/v1/calls/
+```
+
+***
+
+## FILE 12 — `sales/serializers.py` + `sales/views.py` + `sales/urls.py`
+
+```
+Generate the full sales app for the Bindu Jewellery Django backend.
+
+Models (generate if not existing):
+- Sale: lead(FK, nullable), branch(FK), recorded_by(FK User),
+        amount(DecimalField), item_description, created_at
+- Revenue: branch(FK), date, total_amount — daily aggregated (optional, can compute)
+
+Serializers:
+1. SaleSerializer — all fields, recorded_by read-only, branch read-only
+2. RevenueSerializer — branch, date, total_amount
+
+Views:
+1. SaleViewSet
+   - create: staff — auto-set branch and recorded_by from request.user
+   - list: owner sees all, manager sees branch only, staff sees own
+2. RevenueView(ListAPIView)
+   - GET /sales/revenue/?branch=&from=&to=
+   - IsManager
+   - Aggregates Sale by branch + date range
+
+URLs — register under api/v1/sales/
+```
+
+***
+
+## FILE 13 — `campaigns/whatsapp.py`
+
+```
+Generate campaigns/whatsapp.py for the Bindu Jewellery Django backend.
+Development mode: real HTTP calls to Meta, but use test phone numbers.
+
+Create WhatsAppService class:
+- BASE_URL = 'https://graph.facebook.com/v19.0'
+- Reads from settings: WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_ACCESS_TOKEN, WHATSAPP_API_VERSION
+
+Methods:
+1. send_text(phone: str, message: str) → dict
+   - POST to /messages with type=text
+
+2. send_template(phone: str, template_name: str, params: list[str]) → dict
+   - POST with type=template, language code=en_IN
+   - Components: body with text parameters
+
+3. send_media(phone: str, media_url: str, caption: str = '') → dict
+   - POST with type=image
+
+All methods:
+- Add 'whatsapp' prefix to phone if missing
+- Log request + response with logger = logging.getLogger('whatsapp')
+- Raise WhatsAppError(message, status_code) on non-2xx
+- WhatsAppError is a custom Exception defined in the same file
+
+No retry logic here — retries handled at Celery task level with max_retries=3.
+```
+
+***
+
+## FILE 14 — `campaigns/serializers.py`
+
+```
+Generate campaigns/serializers.py for the Bindu Jewellery Django backend.
+
+Models: Campaign, CampaignLead, WhatsAppTemplate, SpecialDayMessage
+
+Campaign fields: name, branch, segment, campaign_type, whatsapp_template,
+                 template_name, message, status, scheduled_at, sent_at,
+                 created_by, created_at, updated_at
+Campaign properties: total_leads, sent_count, converted_count, roi_percent
+
+Create:
+1. WhatsAppTemplateSerializer — all fields, created_by read-only
+2. SpecialDayMessageSerializer — all fields, validate date is valid calendar date
+3. CampaignListSerializer — lightweight: id, name, status, campaign_type,
+                            total_leads, sent_count, roi_percent, scheduled_at
+4. CampaignSerializer — full detail with nested branch name, segment name,
+                        whatsapp_template nested, computed stats as read-only fields
+5. CampaignCreateSerializer — write: name, branch, segment, campaign_type,
+                               template_name, message, scheduled_at, whatsapp_template
+6. CampaignLeadSerializer — campaign(id), lead(id+name+phone), sent, delivered,
+                             read, converted, sent_at, error
+```
+
+***
+
+## FILE 15 — `campaigns/views.py` + `campaigns/urls.py`
+
+```
+Generate campaigns/views.py and campaigns/urls.py for the Bindu Jewellery Django backend.
+
+Views:
+1. CampaignViewSet(ModelViewSet)
+   - list/retrieve: IsManager
+   - create/destroy: IsOwner only
+   - get_serializer_class(): CampaignListSerializer for list,
+                             CampaignCreateSerializer for create,
+                             CampaignSerializer for retrieve
+   - perform_create: auto-set created_by=request.user
+   - Custom action: POST /{id}/launch/
+     → validates status in ['draft','scheduled']
+     → calls send_campaign_blast.delay(campaign.id)
+     → sets status='active', returns 202
+
+2. CampaignLeadViewSet(ModelViewSet)
+   - list: filter by campaign_id query param
+   - update: allow marking delivered/converted via PATCH
+   - IsManager for list, IsOwner for update
+
+3. WhatsAppTemplateViewSet(ModelViewSet) — IsOwner CRUD
+
+4. SpecialDayMessageViewSet(ModelViewSet) — IsOwner CRUD
+
+URLs — register under api/v1/campaigns/
+```
+
+***
+
+## FILE 16 — `notifications/serializers.py` + `notifications/views.py` + `notifications/urls.py`
+
+```
+Generate the full notifications app for the Bindu Jewellery Django backend.
+
+Model: Notification — user(FK), title, message, notif_type, is_read, created_at
+notif_type choices: report, alert, reminder, campaign, system
+
+Serializers:
+1. NotificationSerializer — all fields, user read-only
+
+Views:
+1. NotificationListView(ListAPIView)
+   - GET /notifications/
+   - Filter: user=request.user only (users CANNOT see others' notifications)
+   - Order: is_read ASC (unread first), then -created_at
+   - Paginated
+
+2. MarkReadView(UpdateAPIView)
+   - PATCH /notifications/{id}/read/
+   - Sets is_read=True
+   - Validates request.user == notification.user
+
+3. MarkAllReadView(APIView)
+   - POST /notifications/read-all/
+   - Bulk update is_read=True for request.user
+
+4. UnreadCountView(APIView)
+   - GET /notifications/unread-count/
+   - Returns {"count": N}
+
+URLs — register under api/v1/notifications/
+```
+
+***
+
+## FILE 17 — `reports/serializers.py` + `reports/views.py` + `reports/urls.py`
+
+```
+Generate the full reports app for the Bindu Jewellery Django backend.
+
+Model: Report — branch(FK), period(daily/monthly), date, data(JSONField)
+data JSON structure: {"leads": N, "calls": N, "sales_count": N, "sales_amount": "0.00"}
+
+Serializers:
+1. ReportSerializer — all fields
+
+Views:
+1. BranchSnapshotView(APIView)
+   - GET /reports/snapshot/?branch_id=&period=daily
+   - IsManager; manager auto-filtered to own branch
+   - Returns latest Report for that branch+period or 404
+
+2. TriggerEODReportView(APIView)
+   - POST /reports/eod/trigger/
+   - IsManager
+   - Fires generate_branch_snapshot.delay(branch_id, 'daily')
+   - Returns {"status": "queued", "branch": name}
+
+3. ReportListView(ListAPIView)
+   - GET /reports/?branch_id=&from=&to=&period=
+   - IsManager; paginated; date range filter
+
+URLs — register under api/v1/reports/
+```
+
+***
+
+## FILE 18 — `attendance/serializers.py` + `attendance/views.py` + `attendance/urls.py`
+
+```
+Generate the full attendance app for the Bindu Jewellery Django backend.
+
+Models (generate if not existing):
+- Attendance: user(FK), branch(FK), check_in_time, check_out_time(nullable),
+              lat, lng, photo(ImageField, nullable), status(present/late/absent),
+              date, notes
+- Development: photo stored in MEDIA_ROOT locally (not S3 yet)
+
+Serializers:
+1. AttendanceSerializer — all fields, user read-only
+
+Views:
+1. CheckInView(APIView)
+   - POST /attendance/checkin/
+   - Any authenticated staff
+   - Body: lat, lng, photo(optional file upload)
+   - Validates lat/lng range: lat -90 to 90, lng -180 to 180
+   - Creates Attendance with date=today, check_in_time=now
+   - Prevents duplicate check-in for same date
+
+2. CheckOutView(APIView)
+   - POST /attendance/checkout/
+   - Sets check_out_time=now on today's Attendance record
+
+3. AttendanceListView(ListAPIView)
+   - GET /attendance/?user_id=&date=&branch_id=
+   - IsManager; paginated
+
+URLs — register under api/v1/attendance/
+```
+
+***
+
+## FILE 19 — `fieldvisits/serializers.py` + `fieldvisits/views.py` + `fieldvisits/urls.py`
+
+```
+Generate the full fieldvisits app for the Bindu Jewellery Django backend.
+
+Models (generate if not existing):
+- FieldVisit: staff(FK User), lead(FK), branch(FK), started_at, ended_at(nullable),
+              start_lat, start_lng, status(in_progress/completed/cancelled), notes
+- GPSCheckIn: visit(FK), lat, lng, checked_in_at
+- VisitReport: visit(OneToOne), summary, outcome, follow_up_required, created_at
+
+Serializers:
+1. FieldVisitSerializer
+2. GPSCheckInSerializer — validate coords in range
+3. VisitReportSerializer
+
+Views:
+1. StartVisitView(APIView)
+   - POST /fieldvisits/start/
+   - field staff role only
+   - Body: lead_id, lat, lng
+   - Creates FieldVisit with status=in_progress
+
+2. GPSCheckInView(APIView)
+   - POST /fieldvisits/{id}/checkin/
+   - Creates GPSCheckIn record for that visit
+
+3. SubmitReportView(APIView)
+   - POST /fieldvisits/{id}/report/
+   - Creates VisitReport, sets visit.status=completed, sets ended_at=now
+
+4. FieldVisitListView(ListAPIView)
+   - GET /fieldvisits/?staff_id=&date=&status=
+   - IsManager; manager sees own branch only
+
+URLs — register under api/v1/fieldvisits/
+```
+
+***
+
+## FILE 20 — `celery_app/tasks/leads.py`
+
+```
+Generate celery_app/tasks/leads.py for the Bindu Jewellery Django backend.
+
+All tasks: bind=True, max_retries=3, logger = logging.getLogger('leads')
+All model imports INSIDE the function body (not at module top level).
+
+Tasks:
+1. send_birthday_wishes(self)
+   - Runs daily at 00:00 (see celery_config.py)
+   - Matches User.date_of_birth month+day == today (NOT full date, yearly repeat)
+   - Gets WhatsAppTemplate with trigger='birthday', is_active=True
+   - Calls template.render(user) → sends via WhatsAppService.send_text()
+   - Logs: logger.info(f'Birthday wishes sent to {count} users')
+
+2. send_anniversary_wishes(self)
+   - Runs daily at 00:01
+   - Matches User.join_date month+day == today
+   - Gets WhatsAppTemplate with trigger='anniversary'
+   - Same send pattern as birthday
+
+3. send_followup_reminders(self)
+   - Runs daily at 09:00
+   - FollowUp.objects.filter(scheduled_at__date=today, completed=False)
+   - WhatsApp message to lead.phone with lead.assigned_to name
+   - Also creates Notification for the assigned staff member
+
+4. mark_overdue_leads(self)
+   - Runs every 30 mins
+   - FollowUp past scheduled_at and not completed → update related lead score -5
+   - Log count of overdue follow-ups found
+
+5. send_eod_report(self)
+   - Runs daily at 19:00
+   - For each active Branch: aggregate today's leads, calls, sales
+   - Create Notification for branch manager with summary text
+   - Log: logger.info(f'EOD report sent for {branch_count} branches')
+```
+
+***
+
+## FILE 21 — `bindu_jewellery_backend/settings/base.py` (additions only)
+
+```
+Generate ONLY the additions needed in settings/base.py for the Bindu Jewellery backend.
+Do NOT regenerate the whole file — output only the blocks to add/replace.
+
+Add/confirm these blocks:
+
+1. INSTALLED_APPS additions:
+   'rest_framework',
+   'rest_framework_simplejwt.token_blacklist',
+   'corsheaders',
+   'django_filters',
+   'django_celery_beat',
+   'django_celery_results',
+   accounts, branches, leads, calls, fieldvisits,
+   sales, campaigns, notifications, reports, attendance, core
+
+2. MIDDLEWARE: add 'corsheaders.middleware.CorsMiddleware' before CommonMiddleware
+
+3. REST_FRAMEWORK block (full)
+
+4. SIMPLE_JWT block (full)
+
+5. CELERY block:
+   CELERY_BROKER_URL = env('REDIS_URL', default='redis://localhost:6379/0')
+   CELERY_RESULT_BACKEND = env('REDIS_URL', default='redis://localhost:6379/0')
+   CELERY_ACCEPT_CONTENT = ['json']
+   CELERY_TASK_SERIALIZER = 'json'
+   CELERY_TIMEZONE = 'Asia/Kolkata'
+   CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+6. WHATSAPP block:
+   WHATSAPP_PHONE_NUMBER_ID = env('WHATSAPP_PHONE_NUMBER_ID', default='')
+   WHATSAPP_ACCESS_TOKEN = env('WHATSAPP_ACCESS_TOKEN', default='')
+   WHATSAPP_API_VERSION = env('WHATSAPP_API_VERSION', default='v19.0')
+
+7. LOGGING block: loggers for 'leads', 'campaigns', 'whatsapp' writing to console
+
+8. MEDIA_URL = '/media/'
+   MEDIA_ROOT = BASE_DIR / 'media'
+   (development only — S3 added later in production.py)
+```
+
+***
+
+## FILE 22 — Root `urls.py`
+
+```
+Generate the root urls.py for the Bindu Jewellery Django backend.
+
+Include all apps under api/v1/:
+- api/v1/auth/login/          → TokenObtainPairView
+- api/v1/auth/refresh/        → TokenRefreshView
+- api/v1/auth/logout/         → TokenBlacklistView
+- api/v1/accounts/            → accounts.urls
+- api/v1/branches/            → branches.urls
+- api/v1/leads/               → leads.urls
+- api/v1/calls/               → calls.urls
+- api/v1/fieldvisits/         → fieldvisits.urls
+- api/v1/sales/               → sales.urls
+- api/v1/campaigns/           → campaigns.urls
+- api/v1/notifications/       → notifications.urls
+- api/v1/reports/             → reports.urls
+- api/v1/attendance/          → attendance.urls
+
+Development only:
+- Add MEDIA_URL serving via static() for local file uploads
+- Add __debug__ = True guard for django-debug-toolbar (if installed)
+```
+
+***
+
+## FILE 23 — `.env.development` template
+
+```
+Generate a .env.development file template for the Bindu Jewellery backend.
+Development values only — not production.
+
+Include:
+- DJANGO_SECRET_KEY (generate a random one)
+- DEBUG=True
+- ALLOWED_HOSTS=localhost,127.0.0.1
+- DB_NAME, DB_USER, DB_PASSWORD, DB_HOST=localhost, DB_PORT=5432
+- REDIS_URL=redis://localhost:6379/0
+- WHATSAPP_PHONE_NUMBER_ID=your-test-phone-number-id
+- WHATSAPP_ACCESS_TOKEN=your-test-access-token
+- WHATSAPP_API_VERSION=v19.0
+- JWT_ACCESS_TOKEN_LIFETIME_MINUTES=60
+- JWT_REFRESH_TOKEN_LIFETIME_DAYS=7
+
+Add a comment block at the top:
+# Development environment — DO NOT commit to Git
+# Copy to .env and fill in real values
+# Production overrides go in .env.production (S3, RDS etc.)
+```
+
+***
+
+## Generation Order (Follow This Sequence)
+
+| Step | File | Why This Order |
+|---|---|---|
+| 1 | `core/pagination.py` | Used by all views |
+| 2 | `core/permissions.py` | Used by all views |
+| 3 | `core/exceptions.py` | Used by settings |
+| 4 | `settings/base.py` additions | Must exist before running server |
+| 5 | `.env.development` | Needed for settings to load |
+| 6 | `accounts/serializers.py` | Auth foundation |
+| 7 | `accounts/views.py` + `urls.py` | |
+| 8 | `branches/serializers.py` + `views.py` + `urls.py` | |
+| 9 | `leads/serializers.py` + `views.py` + `urls.py` | Depends on branches |
+| 10 | `calls/` all files | Depends on leads |
+| 11 | `sales/` all files | Depends on leads |
+| 12 | `campaigns/whatsapp.py` | Needed by tasks |
+| 13 | `campaigns/serializers.py` + `views.py` + `urls.py` | |
+| 14 | `notifications/` all files | Needed by tasks |
+| 15 | `reports/` all files | |
+| 16 | `attendance/` all files | |
+| 17 | `fieldvisits/` all files | |
+| 18 | `celery_app/tasks/leads.py` | Needs all models ready |
+| 19 | Root `urls.py` | Wire everything together |
+
+***
+
+## After Each File — Run This
+
+```bash
 python manage.py check
-If it passes → here are all 8 remaining models at once:
+# Must show: System check identified no issues (0 silenced).
+```
 
-leads/models.py
-python
-from django.db import models
-from django.conf import settings
-
-
-class Lead(models.Model):
-    SOURCE_CHOICES = [
-        ('walk_in',   'Walk-in'),
-        ('instagram', 'Instagram'),
-        ('facebook',  'Facebook'),
-        ('whatsapp',  'WhatsApp'),
-        ('referral',  'Referral'),
-        ('website',   'Website'),
-        ('other',     'Other'),
-    ]
-    STAGE_CHOICES = [
-        ('new',        'New'),
-        ('contacted',  'Contacted'),
-        ('interested', 'Interested'),
-        ('visit_done', 'Visit Done'),
-        ('converted',  'Converted'),
-        ('lost',       'Lost'),
-    ]
-
-    name        = models.CharField(max_length=200)
-    phone       = models.CharField(max_length=15)
-    email       = models.EmailField(blank=True)
-    source      = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='walk_in')
-    stage       = models.CharField(max_length=20, choices=STAGE_CHOICES, default='new')
-    segment     = models.ForeignKey('branches.Segment', null=True, blank=True,
-                                    on_delete=models.SET_NULL, related_name='leads')
-    branch      = models.ForeignKey('branches.Branch', on_delete=models.CASCADE,
-                                    related_name='leads')
-    assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
-                                    on_delete=models.SET_NULL, related_name='assigned_leads')
-    created_by  = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
-                                    on_delete=models.SET_NULL, related_name='created_leads')
-    budget      = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    notes       = models.TextField(blank=True)
-    score       = models.IntegerField(default=0)
-    created_at  = models.DateTimeField(auto_now_add=True)
-    updated_at  = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['-created_at']
-
-    def __str__(self):
-        return f'{self.name} ({self.stage})'
-
-
-class LeadActivity(models.Model):
-    TYPE_CHOICES = [
-        ('stage_change', 'Stage Changed'),
-        ('note_added',   'Note Added'),
-        ('call_logged',  'Call Logged'),
-        ('visit_done',   'Visit Done'),
-        ('followup_set', 'Follow-up Set'),
-    ]
-    lead          = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name='activities')
-    activity_type = models.CharField(max_length=20, choices=TYPE_CHOICES)
-    description   = models.TextField()
-    created_by    = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
-                                      on_delete=models.SET_NULL)
-    created_at    = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ['-created_at']
-
-
-class FollowUp(models.Model):
-    lead         = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name='followups')
-    scheduled_at = models.DateTimeField()
-    notes        = models.TextField(blank=True)
-    is_done      = models.BooleanField(default=False)
-    created_by   = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
-                                     on_delete=models.SET_NULL)
-    created_at   = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ['scheduled_at']
-calls/models.py
-python
-from django.db import models
-from django.conf import settings
-
-
-class CallLog(models.Model):
-    OUTCOME_CHOICES = [
-        ('no_answer',      'No Answer'),
-        ('callback',       'Call Back Later'),
-        ('interested',     'Interested'),
-        ('not_interested', 'Not Interested'),
-        ('converted',      'Converted'),
-    ]
-
-    lead             = models.ForeignKey('leads.Lead', on_delete=models.CASCADE,
-                                         related_name='calls')
-    called_by        = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
-                                         on_delete=models.SET_NULL, related_name='calls_made')
-    outcome          = models.CharField(max_length=20, choices=OUTCOME_CHOICES)
-    duration_seconds = models.PositiveIntegerField(default=0)
-    notes            = models.TextField(blank=True)
-    called_at        = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ['-called_at']
-
-    def __str__(self):
-        return f'{self.lead.name} → {self.outcome}'
-field_visits/models.py
-python
-from django.db import models
-from django.conf import settings
-
-
-class FieldVisit(models.Model):
-    STATUS_CHOICES = [
-        ('active',    'Active'),
-        ('completed', 'Completed'),
-        ('cancelled', 'Cancelled'),
-    ]
-    lead        = models.ForeignKey('leads.Lead', on_delete=models.CASCADE,
-                                    related_name='field_visits')
-    field_staff = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
-                                    on_delete=models.SET_NULL, related_name='field_visits')
-    start_lat   = models.DecimalField(max_digits=10, decimal_places=7)
-    start_lng   = models.DecimalField(max_digits=10, decimal_places=7)
-    status      = models.CharField(max_length=15, choices=STATUS_CHOICES, default='active')
-    started_at  = models.DateTimeField(auto_now_add=True)
-    ended_at    = models.DateTimeField(null=True, blank=True)
-
-    def __str__(self):
-        return f'Visit: {self.lead.name} by {self.field_staff}'
-
-
-class GPSCheckIn(models.Model):
-    visit         = models.ForeignKey(FieldVisit, on_delete=models.CASCADE,
-                                      related_name='checkins')
-    lat           = models.DecimalField(max_digits=10, decimal_places=7)
-    lng           = models.DecimalField(max_digits=10, decimal_places=7)
-    checked_in_at = models.DateTimeField(auto_now_add=True)
-
-
-class VisitReport(models.Model):
-    visit        = models.OneToOneField(FieldVisit, on_delete=models.CASCADE,
-                                        related_name='report')
-    summary      = models.TextField()
-    outcome      = models.CharField(max_length=100, blank=True)
-    next_action  = models.TextField(blank=True)
-    submitted_at = models.DateTimeField(auto_now_add=True)
-sales/models.py
-python
-from django.db import models
-from django.conf import settings
-
-
-class Sale(models.Model):
-    lead        = models.ForeignKey('leads.Lead', null=True, blank=True,
-                                    on_delete=models.SET_NULL, related_name='sales')
-    branch      = models.ForeignKey('branches.Branch', on_delete=models.CASCADE,
-                                    related_name='sales')
-    segment     = models.ForeignKey('branches.Segment', null=True,
-                                    on_delete=models.SET_NULL, related_name='sales')
-    sold_by     = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
-                                    on_delete=models.SET_NULL, related_name='sales')
-    amount      = models.DecimalField(max_digits=12, decimal_places=2)
-    description = models.TextField(blank=True)
-    sold_at     = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ['-sold_at']
-
-    def __str__(self):
-        return f'₹{self.amount} — {self.branch.name}'
-campaigns/models.py
-python
-from django.db import models
-from django.conf import settings
-
-
-class Campaign(models.Model):
-    STATUS_CHOICES = [
-        ('draft',     'Draft'),
-        ('active',    'Active'),
-        ('completed', 'Completed'),
-        ('paused',    'Paused'),
-    ]
-    name          = models.CharField(max_length=200)
-    branch        = models.ForeignKey('branches.Branch', on_delete=models.CASCADE,
-                                      related_name='campaigns')
-    template_name = models.CharField(max_length=100)
-    message_body  = models.TextField()
-    status        = models.CharField(max_length=15, choices=STATUS_CHOICES, default='draft')
-    created_by    = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
-                                      on_delete=models.SET_NULL)
-    created_at    = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return self.name
-
-
-class CampaignLead(models.Model):
-    campaign  = models.ForeignKey(Campaign, on_delete=models.CASCADE,
-                                  related_name='campaign_leads')
-    lead      = models.ForeignKey('leads.Lead', on_delete=models.CASCADE)
-    sent      = models.BooleanField(default=False)
-    delivered = models.BooleanField(default=False)
-    opened    = models.BooleanField(default=False)
-    sent_at   = models.DateTimeField(null=True, blank=True)
-
-    class Meta:
-        unique_together = ['campaign', 'lead']
-notifications/models.py
-python
-from django.db import models
-from django.conf import settings
-
-
-class Notification(models.Model):
-    TYPE_CHOICES = [
-        ('push',   'Push'),
-        ('in_app', 'In-App'),
-        ('alert',  'Alert'),
-    ]
-    user              = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
-                                          related_name='notifications')
-    title             = models.CharField(max_length=200)
-    body              = models.TextField()
-    notification_type = models.CharField(max_length=10, choices=TYPE_CHOICES, default='in_app')
-    is_read           = models.BooleanField(default=False)
-    created_at        = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ['-created_at']
-attendance/models.py
-python
-from django.db import models
-from django.conf import settings
-
-
-class Attendance(models.Model):
-    STATUS_CHOICES = [
-        ('pending',  'Pending'),
-        ('approved', 'Approved'),
-        ('rejected', 'Rejected'),
-    ]
-    user          = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
-                                      related_name='attendance_records')
-    date          = models.DateField(auto_now_add=True)
-    check_in_lat  = models.DecimalField(max_digits=10, decimal_places=7, null=True)
-    check_in_lng  = models.DecimalField(max_digits=10, decimal_places=7, null=True)
-    photo         = models.ImageField(upload_to='attendance/photos/', null=True, blank=True)
-    status        = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
-    approved_by   = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
-                                      on_delete=models.SET_NULL, related_name='approvals')
-    checked_in_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        unique_together = ['user', 'date']
-        ordering        = ['-checked_in_at']
-reports/models.py
-python
-from django.db import models
-
-
-class DailyReport(models.Model):
-    branch            = models.ForeignKey('branches.Branch', on_delete=models.CASCADE,
-                                          related_name='daily_reports')
-    date              = models.DateField()
-    total_leads       = models.IntegerField(default=0)
-    total_calls       = models.IntegerField(default=0)
-    total_conversions = models.IntegerField(default=0)
-    total_revenue     = models.DecimalField(max_digits=14, decimal_places=2, default=0)
-    generated_at      = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        unique_together = ['branch', 'date']
-        ordering        = ['-date']
-After pasting all files, run:
-powershell
-python manage.py check
+```bash
+# After all files done:
 python manage.py makemigrations
 python manage.py migrate
-Prepared using Claude Sonnet 4.6 Thinking
-PS C:\\Users\\adars\\Desktop\\bectree\\code\\Project1\\bindu_jewellery_backend>
-python manage.py check
-System check identified no issues (0 silenced).
-PS C:\\Users\\adars\\Desktop\\bectree\\code\\Project1\\bindu_jewellery_backend>
-
-🎉 System check identified no issues (0 silenced). — Perfect! Now run these in order:
-
-Step 1 — Make Migrations
-powershell
-python manage.py makemigrations accounts
-python manage.py makemigrations branches
-python manage.py makemigrations leads
-python manage.py makemigrations calls
-python manage.py makemigrations field_visits
-python manage.py makemigrations sales
-python manage.py makemigrations campaigns
-python manage.py makemigrations notifications
-python manage.py makemigrations attendance
-python manage.py makemigrations reports
-Step 2 — Apply Migrations
-powershell
-python manage.py migrate
-Step 3 — Create Superuser
-powershell
-python manage.py createsuperuser
-It will ask:
-
-text
-Email: admin@bindu.com
-Full name: Admin
-Phone: 9999999999
-Password: xxxxxxxx
-Step 4 — Run Server
-powershell
 python manage.py runserver
-Then open:
-
-Admin panel → http://127.0.0.1:8000/admin/ ✅
-
-API root → http://127.0.0.1:8000/api/v1/ ✅
-
-Share the output here and we move to the next phase — serializers + views + urls for all apps. 🚀
-
-Prepared using Claude Sonnet 4.6 Thinking
-NOW I NEED TO CREATE THE MD(CONTEXT) FILE FOR THE THIS PROJECT CODEVLEP THE BACKEND CODE PERFECTLY I AM USING ANTIGRAVITY IDE
-Completed 2 steps
-CONTEXT
-Bindu Jewellery Backend — Project Context
-IDE: Antigravity | Framework: Django 5.1.6 + Django REST Framework | Python: 3.13
-
-Project Overview
-A full-stack CRM + field-sales management backend for Bindu Jewellery, a multi-branch jewellery chain in Kerala. The system manages leads, telecalling, field visits, WhatsApp campaigns, attendance, and sales analytics across multiple branches and staff roles.
-
-Tech Stack
-Layer	Technology
-Language	Python 3.13
-Framework	Django 5.1.6
-API	Django REST Framework (DRF)
-Auth	JWT via djangorestframework-simplejwt
-Database	SQLite (dev) → PostgreSQL (prod)
-Task Queue	Celery + Redis
-Scheduler	django-celery-beat
-Push Notifications	Firebase Cloud Messaging (FCM)
-WhatsApp	Meta Cloud API
-Storage	Local (dev) → AWS S3 (prod)
-CORS	django-cors-headers
-Filtering	django-filter
-Config	python-decouple (.env)
-Folder Structure
-text
-bindu_jewellery_backend/          ← Django project root (manage.py lives here)
-│
-├── manage.py
-├── db.sqlite3
-├── .env
-│
-├── bindu_jewellery_backend/      ← Django config package
-│   ├── __init__.py
-│   ├── asgi.py
-│   ├── wsgi.py
-│   ├── urls.py
-│   ├── celery.py
-│   └── settings/
-│       ├── __init__.py
-│       ├── base.py               ← All shared settings
-│       └── development.py        ← DEBUG=True, CORS allow all
-│
-├── core/                         ← Shared utilities (no models)
-│   ├── __init__.py
-│   ├── pagination.py             ← StandardPagination
-│   ├── exceptions.py             ← custom_exception_handler
-│   └── permissions.py            ← IsOwner, IsManager, IsStaffOrAbove, IsTelecaller, IsFieldStaff
-│
-├── accounts/                     ← Custom User model + auth
-├── branches/                     ← Company, Branch, Segment
-├── leads/                        ← Lead, LeadActivity, FollowUp
-├── calls/                        ← CallLog
-├── field_visits/                 ← FieldVisit, GPSCheckIn, VisitReport
-├── sales/                        ← Sale
-├── campaigns/                    ← Campaign, CampaignLead
-├── notifications/                ← Notification
-├── attendance/                   ← Attendance
-└── reports/                      ← DailyReport
-Settings Architecture
-Settings are split into a package at bindu_jewellery_backend/settings/:
-
-base.py — all shared settings (apps, DRF, JWT, Celery, CORS, AWS, Firebase)
-
-development.py — imports base, sets DEBUG=True, CORS_ALLOW_ALL_ORIGINS=True
-
-manage.py uses: bindu_jewellery_backend.settings.development
-wsgi.py / asgi.py use: bindu_jewellery_backend.settings.production (to be created)
-
-Custom User Model
-App: accounts | Model: accounts.User | Set in: AUTH_USER_MODEL = "accounts.User"
-
-python
-class User(AbstractBaseUser, PermissionsMixin):
-    email      # USERNAME_FIELD — unique login identifier
-    full_name  # single name field (no first/last split)
-    phone      # unique, used for WhatsApp
-    role       # owner | manager | staff | telecaller | field_staff
-    branch     # FK → branches.Branch (null = owner/unassigned)
-    avatar     # ImageField
-    fcm_token  # Firebase push token (stored on user)
-    is_active, is_staff, created_at, updated_at
-
-    # Properties
-    is_owner   → role == 'owner'
-    is_manager → role == 'manager'
-Authentication: JWT Bearer tokens via rest_framework_simplejwt
-
-Access token lifetime: 60 minutes
-
-Refresh token lifetime: 7 days
-
-Rotate + blacklist on refresh: enabled
-
-Role Hierarchy
-text
-owner
-  └── manager (branch-level)
-        ├── staff        (shop/counter)
-        ├── telecaller   (calls + campaigns)
-        └── field_staff  (GPS visits)
-Role	Can Do
-owner	Full access to all branches, reports, settings
-manager	Branch-scoped access, approve attendance, assign leads
-staff	Add/view leads, log sales for their branch
-telecaller	Call logs, campaigns, follow-ups
-field_staff	GPS check-in, field visits, visit reports
-App Models Reference
-branches
-Company — top-level entity (name, logo, address, phone, email)
-
-Branch — belongs to Company (name, address, lat/lng, phone, is_active)
-
-Segment — jewellery category per branch (bridal | daily_wear | investment | diamond)
-
-unique_together = ['branch', 'name']
-
-leads
-Lead — core CRM record
-
-Sources: walk_in | instagram | facebook | whatsapp | referral | website | other
-
-Stages: new → contacted → interested → visit_done → converted → lost
-
-FKs: branch, segment, assigned_to (User), created_by (User)
-
-Fields: name, phone, email, budget, notes, score
-
-LeadActivity — audit trail of all actions on a lead
-
-FollowUp — scheduled callbacks with is_done flag
-
-calls
-CallLog — telecaller call record
-
-Outcomes: no_answer | callback | interested | not_interested | converted
-
-Fields: lead, called_by, outcome, duration_seconds, notes, called_at
-
-field_visits
-FieldVisit — GPS-tracked visit to a lead
-
-Statuses: active | completed | cancelled
-
-Fields: lead, field_staff, start_lat/lng, started_at, ended_at
-
-GPSCheckIn — periodic GPS ping during a visit
-
-VisitReport — outcome summary submitted after visit
-
-sales
-Sale — closed sale record
-
-FKs: lead (optional), branch, segment, sold_by
-
-Fields: amount, description, sold_at
-
-campaigns
-Campaign — WhatsApp broadcast campaign
-
-Statuses: draft | active | completed | paused
-
-Fields: name, branch, template_name, message_body, created_by
-
-CampaignLead — per-lead message status (sent, delivered, opened)
-
-unique_together = ['campaign', 'lead']
-
-notifications
-Notification — in-app + push notification
-
-Types: push | in_app | alert
-
-Fields: user, title, body, is_read, created_at
-
-attendance
-Attendance — daily check-in with selfie + GPS
-
-Statuses: pending | approved | rejected
-
-unique_together = ['user', 'date']
-
-Fields: user, date, check_in_lat/lng, photo, approved_by
-
-reports
-DailyReport — auto-generated daily summary per branch
-
-Fields: branch, date, total_leads, total_calls, total_conversions, total_revenue
-
-unique_together = ['branch', 'date']
-
-API Structure
-All endpoints are prefixed: /api/v1/
-
-App	Base URL
-Auth	/api/v1/auth/
-Accounts	/api/v1/accounts/
-Branches	/api/v1/branches/
-Leads	/api/v1/leads/
-Calls	/api/v1/calls/
-Field Visits	/api/v1/field-visits/
-Sales	/api/v1/sales/
-Campaigns	/api/v1/campaigns/
-Notifications	/api/v1/notifications/
-Attendance	/api/v1/attendance/
-Reports	/api/v1/reports/
-Authentication: All endpoints require Authorization: Bearer <access_token> header except login/register.
-
-Pagination: All list endpoints return:
-
-json
-{
-  "count": 100,
-  "next": "...",
-  "previous": null,
-  "total_pages": 5,
-  "current_page": 1,
-  "results": [...]
-}
-Error Response Format (via custom_exception_handler):
-
-json
-{
-  "success": false,
-  "error": {
-    "status_code": 400,
-    "detail": { ... }
-  }
-}
-DRF Global Settings
-python
-REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework_simplejwt.authentication.JWTAuthentication"],
-    "DEFAULT_PERMISSION_CLASSES":     ["rest_framework.permissions.IsAuthenticated"],
-    "DEFAULT_FILTER_BACKENDS":        [DjangoFilterBackend, SearchFilter, OrderingFilter],
-    "DEFAULT_PAGINATION_CLASS":       "core.pagination.StandardPagination",
-    "PAGE_SIZE":                      20,
-    "EXCEPTION_HANDLER":              "core.exceptions.custom_exception_handler",
-}
-Custom Permissions (core/permissions.py)
-Class	Allowed Roles
-IsOwner	owner
-IsManager	owner, manager
-IsStaffOrAbove	all roles
-IsTelecaller	owner, manager, telecaller
-IsFieldStaff	owner, manager, field_staff
-Environment Variables (.env)
-text
-DJANGO_SECRET_KEY=your-secret-key
-DEBUG=True
-ALLOWED_HOSTS=localhost,127.0.0.1
-CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
-
-# Redis / Celery
-REDIS_URL=redis://localhost:6379/0
-
-# WhatsApp Meta API
-WHATSAPP_API_TOKEN=
-WHATSAPP_PHONE_NUMBER_ID=
-
-# Firebase
-FIREBASE_CREDENTIALS_JSON=
-
-# AWS S3 (production)
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_STORAGE_BUCKET_NAME=bindu-media
-AWS_S3_REGION_NAME=ap-south-1
-Files Still To Create
-High Priority (needed for API to work)
-bindu_jewellery_backend/celery.py
-
-bindu_jewellery_backend/__init__.py (import celery app)
-
-bindu_jewellery_backend/urls.py (root URL config)
-
-Each app's serializers.py
-
-Each app's views.py
-
-Each app's urls.py
-
-Each app's admin.py
-
-Medium Priority
-accounts/tokens.py — custom JWT claims
-
-core/mixins.py — branch-scoped queryset mixin
-
-Celery tasks per app (follow-up reminders, campaign sending, daily report generation)
-
-Production
-settings/production.py
-
-requirements.txt
-
-Procfile / gunicorn config
-
-Nginx config
-
-Coding Conventions
-All FKs to User use settings.AUTH_USER_MODEL (not direct import)
-
-All list views use StandardPagination automatically via DRF global setting
-
-Branch-scoped views filter queryset by request.user.branch for non-owner roles
-
-All monetary values use DecimalField(max_digits=12, decimal_places=2)
-
-GPS coordinates use DecimalField(max_digits=10, decimal_places=7)
-
-Timestamps: created_at = auto_now_add, updated_at = auto_now
-
-ordering defined in every Meta class
-
-Role checks via core/permissions.py classes, not inline if user.role ==
-
-Current Status
-Django project created
-
-Settings split into base.py + development.py
-
-All 10 apps created
-
-All models written
-
-core/ utilities created (pagination, exceptions, permissions)
-
-python manage.py check passes — 0 issues
-
-Migrations pending (makemigrations + migrate)
-
-Serializers not yet written
-
-Views not yet written
-
-URLs not yet configured
-
-Admin not yet registered
-
-Here's your complete CONTEXT.md for the Bindu Jewellery Backend project — drop this file into your project root in Antigravity IDE. It gives the AI full awareness of your entire backend.
-
-What's included in the context file
-Full project overview — purpose, tech stack, folder structure
-
-Settings architecture — base.py / development.py split explained
-
-Custom User model — all fields, properties, and auth strategy documented
-
-Role hierarchy — owner → manager → staff/telecaller/field_staff with what each can do
-
-All 10 app models — every model, its fields, FK relationships, and constraints
-
-API structure — all /api/v1/ endpoint prefixes + pagination/error response format
-
-DRF global settings — auth, permissions, filtering, pagination, exception handler
-
-Custom permissions — all 5 classes from core/permissions.py
-
-Environment variables — full .env template
-
-Files still to create — checklist of what's pending (serializers, views, urls, celery, etc.)
-
-Coding conventions — standards to follow throughout the project
-
-How to use in Antigravity
-Place CONTEXT.md in your project root (bindu_jewellery_backend/) and reference it in the IDE's context/AI panel. When asking for serializers, views, or any new feature — the AI will have full knowledge of your models, roles, and conventions without you having to re-explain every time.
-
-Next step → Run migrations, then I'll generate all serializers + views as a batch.
-
-Prepared using Claude Sonnet 4.6 Thinking
-Follow-ups
-
-Run migrations worked now show me all serializers
-
-Show me accounts serializers and views first
-
-Generate the celery.py and urls.py files next
-CONTEXT
-
-
-# Bindu Jewellery Backend — Project Context
-
-> **IDE**: Antigravity | **Framework**: Django 5.1.6 + Django REST Framework | **Python**: 3.13
-
-***
-
-## Project Overview
-
-A full-stack CRM + field-sales management backend for **Bindu Jewellery**, a multi-branch jewellery chain in Kerala. The system manages leads, telecalling, field visits, WhatsApp campaigns, attendance, and sales analytics across multiple branches and staff roles.
-
-***
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Language | Python 3.13 |
-| Framework | Django 5.1.6 |
-| API | Django REST Framework (DRF) |
-| Auth | JWT via `djangorestframework-simplejwt` |
-| Database | SQLite (dev) → PostgreSQL (prod) |
-| Task Queue | Celery + Redis |
-| Scheduler | django-celery-beat |
-| Push Notifications | Firebase Cloud Messaging (FCM) |
-| WhatsApp | Meta Cloud API |
-| Storage | Local (dev) → AWS S3 (prod) |
-| CORS | django-cors-headers |
-| Filtering | django-filter |
-| Config | python-decouple (`.env`) |
-
-***
-
-## Folder Structure
-
-```
-bindu_jewellery_backend/          ← Django project root (manage.py lives here)
-│
-├── manage.py
-├── db.sqlite3
-├── .env
-│
-├── bindu_jewellery_backend/      ← Django config package
-│   ├── __init__.py
-│   ├── asgi.py
-│   ├── wsgi.py
-│   ├── urls.py
-│   ├── celery.py
-│   └── settings/
-│       ├── __init__.py
-│       ├── base.py               ← All shared settings
-│       └── development.py        ← DEBUG=True, CORS allow all
-│
-├── core/                         ← Shared utilities (no models)
-│   ├── __init__.py
-│   ├── pagination.py             ← StandardPagination
-│   ├── exceptions.py             ← custom_exception_handler
-│   └── permissions.py            ← IsOwner, IsManager, IsStaffOrAbove, IsTelecaller, IsFieldStaff
-│
-├── accounts/                     ← Custom User model + auth
-├── branches/                     ← Company, Branch, Segment
-├── leads/                        ← Lead, LeadActivity, FollowUp
-├── calls/                        ← CallLog
-├── field_visits/                 ← FieldVisit, GPSCheckIn, VisitReport
-├── sales/                        ← Sale
-├── campaigns/                    ← Campaign, CampaignLead
-├── notifications/                ← Notification
-├── attendance/                   ← Attendance
-└── reports/                      ← DailyReport
 ```
 
 ***
 
-## Settings Architecture
+## Production Changes (Do NOT Generate Now — Later)
 
-Settings are split into a package at `bindu_jewellery_backend/settings/`:
-
-- `base.py` — all shared settings (apps, DRF, JWT, Celery, CORS, AWS, Firebase)
-- `development.py` — imports `base`, sets `DEBUG=True`, `CORS_ALLOW_ALL_ORIGINS=True`
-
-`manage.py` uses: `bindu_jewellery_backend.settings.development`
-`wsgi.py` / `asgi.py` use: `bindu_jewellery_backend.settings.production` (to be created)
-
-***
-
-## Custom User Model
-
-**App**: `accounts` | **Model**: `accounts.User` | **Set in**: `AUTH_USER_MODEL = "accounts.User"`
-
-```python
-class User(AbstractBaseUser, PermissionsMixin):
-    email      # USERNAME_FIELD — unique login identifier
-    full_name  # single name field (no first/last split)
-    phone      # unique, used for WhatsApp
-    role       # owner | manager | staff | telecaller | field_staff
-    branch     # FK → branches.Branch (null = owner/unassigned)
-    avatar     # ImageField
-    fcm_token  # Firebase push token (stored on user)
-    is_active, is_staff, created_at, updated_at
-
-    # Properties
-    is_owner   → role == 'owner'
-    is_manager → role == 'manager'
-```
-
-**Authentication**: JWT Bearer tokens via `rest_framework_simplejwt`
-- Access token lifetime: 60 minutes
-- Refresh token lifetime: 7 days
-- Rotate + blacklist on refresh: enabled
-
-***
-
-## Role Hierarchy
-
-```
-owner
-  └── manager (branch-level)
-        ├── staff        (shop/counter)
-        ├── telecaller   (calls + campaigns)
-        └── field_staff  (GPS visits)
-```
-
-| Role | Can Do |
-|---|---|
-| `owner` | Full access to all branches, reports, settings |
-| `manager` | Branch-scoped access, approve attendance, assign leads |
-| `staff` | Add/view leads, log sales for their branch |
-| `telecaller` | Call logs, campaigns, follow-ups |
-| `field_staff` | GPS check-in, field visits, visit reports |
-
-***
-
-## App Models Reference
-
-### `branches`
-- `Company` — top-level entity (name, logo, address, phone, email)
-- `Branch` — belongs to Company (name, address, lat/lng, phone, is_active)
-- `Segment` — jewellery category per branch (`bridal | daily_wear | investment | diamond`)
-  - `unique_together = ['branch', 'name']`
-
-### `leads`
-- `Lead` — core CRM record
-  - Sources: `walk_in | instagram | facebook | whatsapp | referral | website | other`
-  - Stages: `new → contacted → interested → visit_done → converted → lost`
-  - FKs: `branch`, `segment`, `assigned_to` (User), `created_by` (User)
-  - Fields: `name`, `phone`, `email`, `budget`, `notes`, `score`
-- `LeadActivity` — audit trail of all actions on a lead
-- `FollowUp` — scheduled callbacks with `is_done` flag
-
-### `calls`
-- `CallLog` — telecaller call record
-  - Outcomes: `no_answer | callback | interested | not_interested | converted`
-  - Fields: `lead`, `called_by`, `outcome`, `duration_seconds`, `notes`, `called_at`
-
-### `field_visits`
-- `FieldVisit` — GPS-tracked visit to a lead
-  - Statuses: `active | completed | cancelled`
-  - Fields: `lead`, `field_staff`, `start_lat/lng`, `started_at`, `ended_at`
-- `GPSCheckIn` — periodic GPS ping during a visit
-- `VisitReport` — outcome summary submitted after visit
-
-### `sales`
-- `Sale` — closed sale record
-  - FKs: `lead` (optional), `branch`, `segment`, `sold_by`
-  - Fields: `amount`, `description`, `sold_at`
-
-### `campaigns`
-- `Campaign` — WhatsApp broadcast campaign
-  - Statuses: `draft | active | completed | paused`
-  - Fields: `name`, `branch`, `template_name`, `message_body`, `created_by`
-- `CampaignLead` — per-lead message status (`sent`, `delivered`, `opened`)
-  - `unique_together = ['campaign', 'lead']`
-
-### `notifications`
-- `Notification` — in-app + push notification
-  - Types: `push | in_app | alert`
-  - Fields: `user`, `title`, `body`, `is_read`, `created_at`
-
-### `attendance`
-- `Attendance` — daily check-in with selfie + GPS
-  - Statuses: `pending | approved | rejected`
-  - `unique_together = ['user', 'date']`
-  - Fields: `user`, `date`, `check_in_lat/lng`, `photo`, `approved_by`
-
-### `reports`
-- `DailyReport` — auto-generated daily summary per branch
-  - Fields: `branch`, `date`, `total_leads`, `total_calls`, `total_conversions`, `total_revenue`
-  - `unique_together = ['branch', 'date']`
-
-***
-
-## API Structure
-
-All endpoints are prefixed: `/api/v1/`
-
-| App | Base URL |
-|---|---|
-| Auth | `/api/v1/auth/` |
-| Accounts | `/api/v1/accounts/` |
-| Branches | `/api/v1/branches/` |
-| Leads | `/api/v1/leads/` |
-| Calls | `/api/v1/calls/` |
-| Field Visits | `/api/v1/field-visits/` |
-| Sales | `/api/v1/sales/` |
-| Campaigns | `/api/v1/campaigns/` |
-| Notifications | `/api/v1/notifications/` |
-| Attendance | `/api/v1/attendance/` |
-| Reports | `/api/v1/reports/` |
-
-**Authentication**: All endpoints require `Authorization: Bearer <access_token>` header except login/register.
-
-**Pagination**: All list endpoints return:
-```json
-{
-  "count": 100,
-  "next": "...",
-  "previous": null,
-  "total_pages": 5,
-  "current_page": 1,
-  "results": [...]
-}
-```
-
-**Error Response Format** (via `custom_exception_handler`):
-```json
-{
-  "success": false,
-  "error": {
-    "status_code": 400,
-    "detail": { ... }
-  }
-}
-```
-
-***
-
-## DRF Global Settings
-
-```python
-REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework_simplejwt.authentication.JWTAuthentication"],
-    "DEFAULT_PERMISSION_CLASSES":     ["rest_framework.permissions.IsAuthenticated"],
-    "DEFAULT_FILTER_BACKENDS":        [DjangoFilterBackend, SearchFilter, OrderingFilter],
-    "DEFAULT_PAGINATION_CLASS":       "core.pagination.StandardPagination",
-    "PAGE_SIZE":                      20,
-    "EXCEPTION_HANDLER":              "core.exceptions.custom_exception_handler",
-}
-```
-
-***
-
-## Custom Permissions (core/permissions.py)
-
-| Class | Allowed Roles |
-|---|---|
-| `IsOwner` | `owner` |
-| `IsManager` | `owner`, `manager` |
-| `IsStaffOrAbove` | all roles |
-| `IsTelecaller` | `owner`, `manager`, `telecaller` |
-| `IsFieldStaff` | `owner`, `manager`, `field_staff` |
-
-***
-
-## Environment Variables (.env)
-
-```env
-DJANGO_SECRET_KEY=your-secret-key
-DEBUG=True
-ALLOWED_HOSTS=localhost,127.0.0.1
-CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
-
-# Redis / Celery
-REDIS_URL=redis://localhost:6379/0
-
-# WhatsApp Meta API
-WHATSAPP_API_TOKEN=
-WHATSAPP_PHONE_NUMBER_ID=
-
-# Firebase
-FIREBASE_CREDENTIALS_JSON=
-
-# AWS S3 (production)
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_STORAGE_BUCKET_NAME=bindu-media
-AWS_S3_REGION_NAME=ap-south-1
-```
-
-***
-
-## Files Still To Create
-
-### High Priority (needed for API to work)
-- [ ] `bindu_jewellery_backend/celery.py`
-- [ ] `bindu_jewellery_backend/__init__.py` (import celery app)
-- [ ] `bindu_jewellery_backend/urls.py` (root URL config)
-- [ ] Each app's `serializers.py`
-- [ ] Each app's `views.py`
-- [ ] Each app's `urls.py`
-- [ ] Each app's `admin.py`
-
-### Medium Priority
-- [ ] `accounts/tokens.py` — custom JWT claims
-- [ ] `core/mixins.py` — branch-scoped queryset mixin
-- [ ] Celery tasks per app (follow-up reminders, campaign sending, daily report generation)
-
-### Production
-- [ ] `settings/production.py`
-- [ ] `requirements.txt`
-- [ ] `Procfile` / `gunicorn` config
-- [ ] Nginx config
-
-***
-
-## Coding Conventions
-
-- All FKs to `User` use `settings.AUTH_USER_MODEL` (not direct import)
-- All list views use `StandardPagination` automatically via DRF global setting
-- Branch-scoped views filter `queryset` by `request.user.branch` for non-owner roles
-- All monetary values use `DecimalField(max_digits=12, decimal_places=2)`
-- GPS coordinates use `DecimalField(max_digits=10, decimal_places=7)`
-- Timestamps: `created_at = auto_now_add`, `updated_at = auto_now`
-- `ordering` defined in every `Meta` class
-- Role checks via `core/permissions.py` classes, not inline `if user.role ==`
-
-***
-
-## Current Status
-
-- [x] Django project created
-- [x] Settings split into `base.py` + `development.py`
-- [x] All 10 apps created
-- [x] All models written
-- [x] `core/` utilities created (pagination, exceptions, permissions)
-- [x] `python manage.py check` passes — 0 issues
-- [ ] Migrations pending (`makemigrations` + `migrate`)
-- [ ] Serializers not yet written
-- [ ] Views not yet written
-- [ ] URLs not yet configured
-- [ ] Admin not yet registered
+When ready for production, generate separately:
+- `settings/production.py` — S3 storage, RDS database, Sentry, DEBUG=False
+- `Dockerfile` + `entrypoint.sh`
+- `nginx.conf`
+- `.env.production` template
+- GitHub Actions CI/CD workflow
