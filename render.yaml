@@ -23,6 +23,38 @@ services:
         value: https://bindu-jewellery-frontend.vercel.app # Placeholder, update after frontend deploy
       - key: CORS_ALLOWED_ORIGINS
         value: https://bindu-jewellery-frontend.vercel.app # Placeholder
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: INTEGRATION_ENCRYPTION_KEY
+        sync: false
+      - key: GLM_API_KEY
+        sync: false
+      - key: GLM_API_URL
+        value: https://api.us-west-2.modal.direct/v1
+      - key: GLM_MODEL
+        value: zai-org/GLM-5.1-FP8
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: WHATSAPP_API_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: FIREBASE_CREDENTIALS_JSON
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_STORAGE_BUCKET_NAME
+        value: bindu-media
+      - key: AWS_S3_REGION_NAME
+        value: ap-south-1
 
   - type: worker
     name: bindu-jewellery-worker
@@ -48,6 +80,51 @@ services:
           type: web
           name: bindu-jewellery-backend
           property: envVar:DJANGO_SECRET_KEY
+      - key: GOOGLE_CLIENT_ID
+        fromService:
+          type: web
+          name: bindu-jewellery-backend
+          property: envVar:GOOGLE_CLIENT_ID
+      - key: GOOGLE_CLIENT_SECRET
+        fromService:
+          type: web
+          name: bindu-jewellery-backend
+          property: envVar:GOOGLE_CLIENT_SECRET
+      - key: META_APP_ID
+        fromService:
+          type: web
+          name: bindu-jewellery-backend
+          property: envVar:META_APP_ID
+      - key: META_APP_SECRET
+        fromService:
+          type: web
+          name: bindu-jewellery-backend
+          property: envVar:META_APP_SECRET
+      - key: INTEGRATION_ENCRYPTION_KEY
+        fromService:
+          type: web
+          name: bindu-jewellery-backend
+          property: envVar:INTEGRATION_ENCRYPTION_KEY
+      - key: GLM_API_KEY
+        fromService:
+          type: web
+          name: bindu-jewellery-backend
+          property: envVar:GLM_API_KEY
+      - key: GEMINI_API_KEY
+        fromService:
+          type: web
+          name: bindu-jewellery-backend
+          property: envVar:GEMINI_API_KEY
+      - key: AWS_ACCESS_KEY_ID
+        fromService:
+          type: web
+          name: bindu-jewellery-backend
+          property: envVar:AWS_ACCESS_KEY_ID
+      - key: AWS_SECRET_ACCESS_KEY
+        fromService:
+          type: web
+          name: bindu-jewellery-backend
+          property: envVar:AWS_SECRET_ACCESS_KEY
 
   - type: redis
     name: bindu-redis
