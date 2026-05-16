@@ -173,9 +173,9 @@ class UserViewSet(viewsets.ModelViewSet):
         # Always check dynamic permissions first for staff/manager roles
         perms = [IsAuthenticated(), HasDynamicPermission()]
         
-        if self.action in ('create', 'destroy'):
+        if self.action == 'destroy':
             perms.append(IsOwner())
-        elif self.action in ('update', 'partial_update'):
+        elif self.action in ('create', 'update', 'partial_update'):
             perms.append(IsManager())
         else:
             perms.append(IsStaffOrAbove())

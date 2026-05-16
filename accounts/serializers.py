@@ -72,6 +72,17 @@ class UserCreateSerializer(serializers.ModelSerializer):
     def validate(self, data):
         if data['password'] != data.pop('password2'):
             raise serializers.ValidationError({'password2': 'Passwords do not match.'})
+            
+        # Role validation based on the requesting user
+        request = self.context.get('request')
+        if request and request.user:
+            requesting_user = request.user
+            target_role = data.get('role')
+            
+            # Managers cannot create Owners or Managers
+            if requesting_user.role == 'manager' and target_role in ['owner', 'admin', 'manager']:
+                raise serializers.ValidationError({'role': 'Managers can only create staff-level accounts (Telecaller, Field Staff, etc.).'})
+                
         return data
 
     def create(self, validated_data):
