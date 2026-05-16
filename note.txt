@@ -1,0 +1,4 @@
+Email: admin@bindu.com
+Full name: Admin
+Phone: 9999999999
+Password: Admin@123

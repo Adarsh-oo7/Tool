@@ -1,0 +1,59 @@
+services:
+  - type: web
+    name: bindu-jewellery-backend
+    env: python
+    buildCommand: ./build.sh
+    startCommand: gunicorn bindu_jewellery_backend.wsgi:application
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: DJANGO_SETTINGS_MODULE
+        value: bindu_jewellery_backend.settings.production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bindu-db
+          property: connectionString
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        value: .render.com
+      - key: CSRF_TRUSTED_ORIGINS
+        value: https://bindu-jewellery-frontend.vercel.app # Placeholder, update after frontend deploy
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://bindu-jewellery-frontend.vercel.app # Placeholder
+
+  - type: worker
+    name: bindu-jewellery-worker
+    env: python
+    buildCommand: ./build.sh
+    startCommand: celery -A bindu_jewellery_backend worker --loglevel=info
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: DJANGO_SETTINGS_MODULE
+        value: bindu_jewellery_backend.settings.production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bindu-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: bindu-redis
+          property: connectionString
+      - key: DJANGO_SECRET_KEY
+        fromService:
+          type: web
+          name: bindu-jewellery-backend
+          property: envVar:DJANGO_SECRET_KEY
+
+  - type: redis
+    name: bindu-redis
+    plan: free
+    ipAllowList: [] # Only allow internal connections
+
+databases:
+  - name: bindu-db
+    plan: free
