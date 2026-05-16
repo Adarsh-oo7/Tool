@@ -26,28 +26,6 @@ services:
         value: https://bindu-jewellery-frontend.vercel.app
       - fromGroup: bindu-shared-secrets
 
-  - type: worker
-    name: bindu-jewellery-worker
-    env: python
-    plan: free
-    buildCommand: ./build.sh
-    startCommand: celery -A bindu_jewellery_backend worker --loglevel=info
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
-      - key: DJANGO_SETTINGS_MODULE
-        value: bindu_jewellery_backend.settings.production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: bindu-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: bindu-redis
-          property: connectionString
-      - fromGroup: bindu-shared-secrets
-
   - type: redis
     name: bindu-redis
     plan: free

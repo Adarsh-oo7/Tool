@@ -46,3 +46,7 @@ if RENDER_EXTERNAL_HOSTNAME:
 
 # CORS
 CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="").split(",")
+
+# Celery Eager Mode (Run tasks synchronously without a background worker for free tier)
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_TASK_EAGER_PROPAGATES = True
