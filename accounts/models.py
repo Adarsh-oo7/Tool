@@ -151,6 +151,10 @@ class User(AbstractBaseUser, PermissionsMixin):
                     'can_add_sales':         ['sales:create'],
                     'can_view_field_visits': ['field_visits:view'],
                     'can_view_reports':      ['reports:view'],
+                    'can_view_staff':        ['staff:view'],
+                    'can_add_staff':         ['staff:create'],
+                    'can_edit_staff':        ['staff:edit'],
+                    'can_delete_staff':      ['staff:delete'],
                 }
                 for field, p_list in mapping.items():
                     if getattr(sp, field, False):

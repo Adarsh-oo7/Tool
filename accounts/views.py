@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django_filters.rest_framework import DjangoFilterBackend
 
-from core.permissions import IsOwner, IsManager, IsStaffOrAbove
+from core.permissions import IsOwner, IsManager, IsStaffOrAbove, HasDynamicPermission
 from .models import StaffPermission, ProfileUpdateRequest
 from .serializers import (
     ChangePasswordSerializer,
@@ -129,6 +129,15 @@ class UserViewSet(viewsets.ModelViewSet):
     filterset_fields = ['branch', 'is_active', 'staff_type']
     search_fields    = ['full_name', 'email', 'phone', 'employee_id']
     ordering_fields  = ['full_name', 'created_at']
+    
+    permission_map = {
+        'list':    'staff:view',
+        'retrieve':'staff:view',
+        'create':  'staff:create',
+        'update':  'staff:edit',
+        'partial_update': 'staff:edit',
+        'destroy': 'staff:delete',
+    }
 
     def get_queryset(self):
         user = self.request.user
@@ -145,6 +154,10 @@ class UserViewSet(viewsets.ModelViewSet):
         
         if user.role == 'owner':
             return qs
+            
+        if not user.has_permission('staff:view'):
+            return qs.none()
+            
         return qs.filter(branch=user.branch)
 
     def get_serializer_class(self):
@@ -157,11 +170,16 @@ class UserViewSet(viewsets.ModelViewSet):
         return UserSerializer
 
     def get_permissions(self):
+        # Always check dynamic permissions first for staff/manager roles
+        perms = [IsAuthenticated(), HasDynamicPermission()]
+        
         if self.action in ('create', 'destroy'):
-            return [IsAuthenticated(), IsOwner()]
-        if self.action in ('update', 'partial_update'):
-            return [IsAuthenticated(), IsManager()]
-        return [IsAuthenticated(), IsStaffOrAbove()]
+            perms.append(IsOwner())
+        elif self.action in ('update', 'partial_update'):
+            perms.append(IsManager())
+        else:
+            perms.append(IsStaffOrAbove())
+        return perms
 
     def perform_destroy(self, instance):
         """Soft delete — never actually delete users."""
