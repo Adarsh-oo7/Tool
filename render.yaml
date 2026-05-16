@@ -2,6 +2,7 @@ services:
   - type: web
     name: bindu-jewellery-backend
     env: python
+    plan: free
     buildCommand: ./build.sh
     startCommand: gunicorn bindu_jewellery_backend.wsgi:application
     envVars:
@@ -47,18 +48,11 @@ services:
         sync: false
       - key: FIREBASE_CREDENTIALS_JSON
         sync: false
-      - key: AWS_ACCESS_KEY_ID
-        sync: false
-      - key: AWS_SECRET_ACCESS_KEY
-        sync: false
-      - key: AWS_STORAGE_BUCKET_NAME
-        value: bindu-media
-      - key: AWS_S3_REGION_NAME
-        value: ap-south-1
 
   - type: worker
     name: bindu-jewellery-worker
     env: python
+    plan: free
     buildCommand: ./build.sh
     startCommand: celery -A bindu_jewellery_backend worker --loglevel=info
     envVars:
@@ -115,16 +109,6 @@ services:
           type: web
           name: bindu-jewellery-backend
           property: envVar:GEMINI_API_KEY
-      - key: AWS_ACCESS_KEY_ID
-        fromService:
-          type: web
-          name: bindu-jewellery-backend
-          property: envVar:AWS_ACCESS_KEY_ID
-      - key: AWS_SECRET_ACCESS_KEY
-        fromService:
-          type: web
-          name: bindu-jewellery-backend
-          property: envVar:AWS_SECRET_ACCESS_KEY
 
   - type: redis
     name: bindu-redis
