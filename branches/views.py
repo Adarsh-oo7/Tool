@@ -35,6 +35,17 @@ class BranchViewSet(BranchScopedMixin, viewsets.ModelViewSet):
             return [IsAuthenticated(), IsOwner()]
         return [IsAuthenticated()]
 
+    def perform_create(self, serializer):
+        # If no company is provided, auto-link to the first company or create a default one
+        company = serializer.validated_data.get('company')
+        if not company:
+            company = Company.objects.first()
+            if not company:
+                company = Company.objects.create(name="Bindu Jewellery")
+            serializer.save(company=company)
+        else:
+            serializer.save()
+
 
 class SegmentViewSet(viewsets.ModelViewSet):
     """Segments scoped to their branch; owners manage, others read-only."""

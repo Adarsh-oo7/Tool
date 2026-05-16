@@ -22,6 +22,9 @@ class BranchSerializer(serializers.ModelSerializer):
             'phone', 'lat', 'lng', 'is_active', 'created_at', 'segments',
         ]
         read_only_fields = ['id', 'created_at']
+        extra_kwargs = {
+            'company': {'required': False, 'allow_null': True}
+        }
 
 
 class BranchListSerializer(serializers.ModelSerializer):
