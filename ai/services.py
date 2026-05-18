@@ -399,8 +399,8 @@ def _chat_glm(prompt, history, context_text, api_key_override=None):
     # giving up and falling back to Gemini.
     timeout = 90
 
-    # Handle concurrency (429) and temporary service errors (503)
-    max_retries = 2
+    # 3 attempts to handle transient 503/429 from Modal.com infrastructure
+    max_retries = 3
     last_resp = None
     
     for i in range(max_retries):
@@ -423,16 +423,18 @@ def _chat_glm(prompt, history, context_text, api_key_override=None):
             if resp.status_code == 200:
                 break
             
-            # Retry on 429 (Concurrency) or 503 (Service Unavailable)
+            # Retry on 429 (rate limit) or 503 (service unavailable / Modal overloaded)
             if resp.status_code in (429, 503):
-                # Only sleep if there is still another retry attempt left
                 if i < max_retries - 1:
-                    time.sleep(5)  # brief wait before retry
+                    # 503 from Modal often clears in a few seconds; 429 needs a bit longer
+                    wait_time = 10 if resp.status_code == 503 else 5
+                    print(f"AI Service: GLM {resp.status_code}, retrying in {wait_time}s (attempt {i+1}/{max_retries})...")
+                    time.sleep(wait_time)
                     continue
                 else:
-                    break  # last attempt — exit immediately to trigger Gemini fallback
+                    break  # all retries exhausted — exit to trigger fallback
             
-            break # Other errors (400, 401, etc.), don't retry
+            break  # other errors (400, 401, etc.) — don't retry
         except requests.exceptions.Timeout:
             # Do not retry on timeout; raise immediately to trigger fast Gemini fallback
             raise RuntimeError(
@@ -570,25 +572,25 @@ def chat_with_ai(prompt, history=[]):
         except Exception as e:
             err = str(e)
             
-            # If 429 and we have a fallback GLM key, try the fallback key
+            # If 429 OR 503 (Modal overloaded), try the fallback GLM key before giving up on GLM entirely
             glm_fallback_key = getattr(settings, 'GLM_API_KEY_FALLBACK', '')
-            if ('429' in err or 'busy' in err.lower()) and glm_fallback_key:
-                print("AI Service: Primary GLM busy, trying Fallback GLM Key...")
+            if ('429' in err or '503' in err or 'busy' in err.lower() or 'timeout' in err.lower()) and glm_fallback_key:
+                print("AI Service: Primary GLM failed, trying Fallback GLM Key...")
                 try:
                     return _chat_glm(prompt, history, context_text, api_key_override=glm_fallback_key)
                 except Exception as fe:
                     err = f"Primary: {err} | Fallback: {str(fe)}"
 
             # Don't fall through on auth errors
-            if '401' in err or 'Unauthorized' in err or 'Invalid' in err.lower():
+            if '401' in err or 'Unauthorized' in err:
                 return (
                     "⚠️ **GLM API Key Invalid**\n\n"
                     f"Error: `{err[:200]}`\n\n"
                     "Please check your `GLM_API_KEY` in `.env`."
                 )
             
-            # For other errors, try Gemini fallback
-            print(f"AI Service: GLM failed ({err[:100]}), falling back to Gemini...")
+            # All GLM attempts exhausted — fall back to Gemini
+            print(f"AI Service: All GLM attempts failed ({err[:120]}), falling back to Gemini...")
             glm_error = err
     else:
         glm_error = "GLM_API_KEY not set"
