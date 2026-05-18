@@ -161,6 +161,28 @@ class GoogleAnalyticsService(BaseIntegrationService):
         
         return analytics_by_date
     
+    def _get_property_website(self, property_id: str, headers: dict) -> str:
+        """
+        Fetch the website URL / default URI of the first web data stream for a property.
+        """
+        try:
+            res = requests.get(
+                f'https://analyticsadmin.googleapis.com/v1beta/properties/{property_id}/dataStreams',
+                headers=headers
+            )
+            if res.status_code == 200:
+                data = res.json()
+                if data.get('dataStreams'):
+                    for stream in data['dataStreams']:
+                        if stream.get('type') == 'WEB_DATA_STREAM' and stream.get('webStreamData'):
+                            uri = stream['webStreamData'].get('defaultUri', '')
+                            # Clean the URI to get a nice domain string
+                            clean_uri = uri.replace('https://', '').replace('http://', '').rstrip('/')
+                            return clean_uri
+        except Exception as e:
+            print(f"Error fetching data stream for property {property_id}: {e}")
+        return ""
+
     def get_available_properties(self) -> list:
         """
         Fetch all available GA4 properties under the connected account.
@@ -184,9 +206,16 @@ class GoogleAnalyticsService(BaseIntegrationService):
                         if account.get('propertySummaries'):
                             for prop in account['propertySummaries']:
                                 prop_id = prop.get('property', '').replace('properties/', '')
+                                
+                                # Try fetching website stream URL
+                                website = self._get_property_website(prop_id, headers)
+                                name = prop.get('displayName', 'Unnamed Property')
+                                if website:
+                                    name = f"{name} ({website})"
+                                    
                                 properties.append({
                                     'id': prop_id,
-                                    'name': prop.get('displayName', 'Unnamed Property'),
+                                    'name': name,
                                     'account_name': account.get('displayName', 'Unnamed Account')
                                 })
                 return properties
