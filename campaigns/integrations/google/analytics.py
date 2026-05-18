@@ -132,7 +132,9 @@ class GoogleAnalyticsService(BaseIntegrationService):
             headers=headers,
             json=body
         )
-        response.raise_for_status()
+        
+        if response.status_code != 200:
+            raise Exception(f"Google Analytics API Error ({response.status_code}): {response.text}")
         
         data = response.json()
         
@@ -196,14 +198,16 @@ class GoogleAnalyticsService(BaseIntegrationService):
             headers=headers
         )
         
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('properties'):
-                prop = data['properties'][0]
-                prop_id = prop.get('name', '').replace('properties/', '')
-                return {
-                    'accountName': prop.get('displayName', 'Google Analytics Property'),
-                    'accountId': prop_id
-                }
-        
-        return {}
+        if response.status_code != 200:
+            raise Exception(f"Failed to fetch GA4 properties ({response.status_code}): {response.text}")
+            
+        data = response.json()
+        if data.get('properties'):
+            prop = data['properties'][0]
+            prop_id = prop.get('name', '').replace('properties/', '')
+            return {
+                'accountName': prop.get('displayName', 'Google Analytics Property'),
+                'accountId': prop_id
+            }
+        else:
+            raise Exception("No GA4 properties found for this Google Account. Please create a Google Analytics 4 property first.")
