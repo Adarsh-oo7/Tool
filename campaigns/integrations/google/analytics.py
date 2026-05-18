@@ -192,22 +192,26 @@ class GoogleAnalyticsService(BaseIntegrationService):
         """
         headers = {'Authorization': f'Bearer {access_token}'}
         
-        # List properties (GA4)
+        # Use accountSummaries to get accounts and properties in one go
         response = requests.get(
-            'https://analyticsadmin.googleapis.com/v1beta/properties',
+            'https://analyticsadmin.googleapis.com/v1beta/accountSummaries',
             headers=headers
         )
         
         if response.status_code != 200:
-            raise Exception(f"Failed to fetch GA4 properties ({response.status_code}): {response.text}")
+            raise Exception(f"Failed to fetch GA4 account summaries ({response.status_code}): {response.text}")
             
         data = response.json()
-        if data.get('properties'):
-            prop = data['properties'][0]
-            prop_id = prop.get('name', '').replace('properties/', '')
-            return {
-                'accountName': prop.get('displayName', 'Google Analytics Property'),
-                'accountId': prop_id
-            }
+        if data.get('accountSummaries'):
+            # Find the first account that has at least one property
+            for account in data['accountSummaries']:
+                if account.get('propertySummaries'):
+                    prop = account['propertySummaries'][0]
+                    prop_id = prop.get('property', '').replace('properties/', '')
+                    return {
+                        'accountName': prop.get('displayName', account.get('displayName', 'Google Analytics Property')),
+                        'accountId': prop_id
+                    }
+            raise Exception("We found your Google Analytics account, but it doesn't have any GA4 Properties set up. Please create a GA4 property in analytics.google.com.")
         else:
-            raise Exception("No GA4 properties found for this Google Account. Please create a Google Analytics 4 property first.")
+            raise Exception("No Google Analytics accounts found for this email. Please create one at analytics.google.com.")
