@@ -194,8 +194,12 @@ def get_encryption_key():
         # Generate a key and warn user to set it in production
         key = getattr(settings, 'INTEGRATION_ENCRYPTION_KEY', None)
         if not key:
-            print("WARNING: Using auto-generated encryption key. Set INTEGRATION_ENCRYPTION_KEY in production!")
-            key = Fernet.generate_key().decode()
+            # Derive a consistent key from SECRET_KEY to prevent multi-process key mismatch
+            secret_key = getattr(settings, 'SECRET_KEY', 'fallback_secret_key_12345')
+            import hashlib
+            import base64
+            hashed = hashlib.sha256(secret_key.encode()).digest()
+            key = base64.urlsafe_b64encode(hashed).decode()
     return key.encode() if isinstance(key, str) else key
 
 
@@ -211,8 +215,12 @@ def decrypt_token(encrypted_token):
     """Decrypt a token from storage."""
     if not encrypted_token:
         return None
-    fernet = Fernet(get_encryption_key())
-    return fernet.decrypt(encrypted_token.encode()).decode()
+    try:
+        fernet = Fernet(get_encryption_key())
+        return fernet.decrypt(encrypted_token.encode()).decode()
+    except Exception as e:
+        print(f"Decryption error (probably due to key mismatch): {e}")
+        return None
 
 
 class Integration(models.Model):
