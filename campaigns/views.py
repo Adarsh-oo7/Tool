@@ -300,12 +300,9 @@ class IntegrationViewSet(viewsets.ModelViewSet):
                 integration.sync_error = result.get('error', 'Unknown error')
                 integration.save(update_fields=['sync_status', 'sync_error'])
                 
-                # Use 400 for config errors, keep 500 for actual server crashes
-                status_code = status.HTTP_400_BAD_REQUEST if 'not configured' in str(result.get('error')) else status.HTTP_500_INTERNAL_SERVER_ERROR
-                
                 return Response(
                     {'detail': f'Sync failed: {result.get("error")}'},
-                    status=status_code
+                    status=status.HTTP_400_BAD_REQUEST
                 )
         except Exception as e:
             integration.sync_status = 'error'
@@ -314,7 +311,7 @@ class IntegrationViewSet(viewsets.ModelViewSet):
             
             return Response(
                 {'detail': f'Sync error: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_400_BAD_REQUEST
             )
 
     @action(detail=True, methods=['post'], url_path='disconnect')
