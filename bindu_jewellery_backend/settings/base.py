@@ -154,9 +154,9 @@ GLM_MODEL            = config('GLM_MODEL',            default='zai-org/GLM-5.1-F
 GEMINI_API_KEY = config('GEMINI_API_KEY', default='')
 
 # Google Integration (Analytics, Ads, YouTube)
-GOOGLE_CLIENT_ID = config("GOOGLE_CLIENT_ID", default="")
-GOOGLE_CLIENT_SECRET = config("GOOGLE_CLIENT_SECRET", default="")
-GOOGLE_REDIRECT_URI = config("GOOGLE_REDIRECT_URI", default="http://localhost:5173/campaigns/integrations/callback")
+GOOGLE_CLIENT_ID = config("GOOGLE_CLIENT_ID", default="").strip()
+GOOGLE_CLIENT_SECRET = config("GOOGLE_CLIENT_SECRET", default="").strip()
+GOOGLE_REDIRECT_URI = config("GOOGLE_REDIRECT_URI", default="http://localhost:5173/campaigns/integrations/callback").strip()
 
 # Meta Integration (Facebook, Instagram, WhatsApp)
 META_APP_ID = config("META_APP_ID", default="")
