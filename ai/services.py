@@ -488,7 +488,8 @@ def _chat_gemini_fallback(prompt, context_text):
                 model = genai.GenerativeModel(model_name)
                 # Combine system prompt + data + user prompt
                 full_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context_text) + f"\n\nUser: {prompt}"
-                response = model.generate_content(full_prompt)
+                # Enforce a 15-second timeout on Gemini to protect the Gunicorn worker from hangs
+                response = model.generate_content(full_prompt, request_options={"timeout": 15.0})
                 return response.text
             except Exception as e:
                 errors.append(f"{model_name}: {str(e)}")
