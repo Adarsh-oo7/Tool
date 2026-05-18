@@ -476,7 +476,8 @@ def _chat_gemini_fallback(prompt, context_text):
         if not api_key:
             raise ValueError("GEMINI_API_KEY not configured")
         
-        genai.configure(api_key=api_key)
+        # Configure transport globally to rest to avoid gRPC connection blocks on Render
+        genai.configure(api_key=api_key, transport='rest')
         
         # Updated model list based on 2026 environment availability
         models_to_try = ['models/gemini-flash-latest', 'models/gemini-2.0-flash-lite', 'models/gemini-1.5-flash']
@@ -487,8 +488,7 @@ def _chat_gemini_fallback(prompt, context_text):
                 model = genai.GenerativeModel(model_name)
                 # Combine system prompt + data + user prompt
                 full_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context_text) + f"\n\nUser: {prompt}"
-                # Use HTTP REST transport instead of gRPC to avoid hangs/timeouts on cloud proxies
-                response = model.generate_content(full_prompt, transport='rest')
+                response = model.generate_content(full_prompt)
                 return response.text
             except Exception as e:
                 errors.append(f"{model_name}: {str(e)}")
