@@ -487,7 +487,8 @@ def _chat_gemini_fallback(prompt, context_text):
                 model = genai.GenerativeModel(model_name)
                 # Combine system prompt + data + user prompt
                 full_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context_text) + f"\n\nUser: {prompt}"
-                response = model.generate_content(full_prompt)
+                # Use HTTP REST transport instead of gRPC to avoid hangs/timeouts on cloud proxies
+                response = model.generate_content(full_prompt, transport='rest')
                 return response.text
             except Exception as e:
                 errors.append(f"{model_name}: {str(e)}")
