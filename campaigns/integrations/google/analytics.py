@@ -203,15 +203,34 @@ class GoogleAnalyticsService(BaseIntegrationService):
             
         data = response.json()
         if data.get('accountSummaries'):
-            # Find the first account that has at least one property
+            target_prop = None
+            first_prop = None
+            
+            # Loop through all accounts and properties
             for account in data['accountSummaries']:
                 if account.get('propertySummaries'):
-                    prop = account['propertySummaries'][0]
-                    prop_id = prop.get('property', '').replace('properties/', '')
-                    return {
-                        'accountName': prop.get('displayName', account.get('displayName', 'Google Analytics Property')),
-                        'accountId': prop_id
-                    }
+                    for prop in account['propertySummaries']:
+                        # Save the very first property as a fallback
+                        if not first_prop:
+                            first_prop = (account, prop)
+                            
+                        # Look specifically for the keralasellers property
+                        if 'keralasellers' in prop.get('displayName', '').lower():
+                            target_prop = (account, prop)
+                            break
+                if target_prop:
+                    break
+                    
+            # Use the target property if found, otherwise use the first one
+            selected_account, selected_prop = target_prop if target_prop else first_prop
+            
+            if selected_prop:
+                prop_id = selected_prop.get('property', '').replace('properties/', '')
+                return {
+                    'accountName': selected_prop.get('displayName', selected_account.get('displayName', 'Google Analytics')),
+                    'accountId': prop_id
+                }
+            
             raise Exception("We found your Google Analytics account, but it doesn't have any GA4 Properties set up. Please create a GA4 property in analytics.google.com.")
         else:
             raise Exception("No Google Analytics accounts found for this email. Please create one at analytics.google.com.")
