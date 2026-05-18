@@ -394,10 +394,10 @@ def _chat_glm(prompt, history, context_text, api_key_override=None):
             messages.append({"role": role, "content": str(content)})
     messages.append({"role": "user", "content": prompt})
 
-    # GLM-5.1 is a reasoning model. We'll set a fail-fast timeout.
-    # Render has a strict 30s request timeout, so we must fail fast (e.g. 20s)
-    # to allow Django to fallback to Gemini or return a proper response within 30s.
-    timeout = 20
+    # GLM-5.1 is a reasoning model and can be slow (30-90s for complex queries).
+    # Gunicorn is configured with --timeout 120, so we allow 90s here before
+    # giving up and falling back to Gemini.
+    timeout = 90
 
     # Handle concurrency (429) and temporary service errors (503)
     max_retries = 2
