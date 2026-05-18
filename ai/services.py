@@ -497,8 +497,9 @@ def _chat_gemini_fallback(prompt, context_text):
             ]
         }
         
-        # In 2026, the active models on Google AI Studio are gemini-2.5-flash and gemini-2.0-flash
-        models = ['gemini-2.5-flash', 'gemini-2.0-flash']
+        # gemini-2.0-flash has a higher free-tier quota (15 RPM) vs gemini-2.5-flash (10 RPM)
+        # Try 2.0-flash first to preserve quota, fall back to 2.5-flash
+        models = ['gemini-2.0-flash', 'gemini-2.5-flash']
         errors = []
         
         for model in models:
