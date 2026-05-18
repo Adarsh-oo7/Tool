@@ -122,7 +122,6 @@ class GoogleAnalyticsService(BaseIntegrationService):
                 {'name': 'activeUsers'},
                 {'name': 'screenPageViews'},
                 {'name': 'eventCount'},
-                {'name': 'advertiserAdCost'},
                 {'name': 'totalRevenue'},
             ]
         }
@@ -145,14 +144,14 @@ class GoogleAnalyticsService(BaseIntegrationService):
             for row in data['rows']:
                 date_str = row['dimensionValues'][0]['value']
                 metrics = {
-                    'impressions': int(row['metricValues'][0]['value'] or 0),
-                    'clicks': int(row['metricValues'][2]['value'] or 0),
-                    'engagement': int(row['metricValues'][3]['value'] or 0),
-                    'reach': int(row['metricValues'][1]['value'] or 0),
+                    'impressions': int(row['metricValues'][2]['value'] or 0),  # screenPageViews
+                    'clicks': int(row['metricValues'][0]['value'] or 0),       # sessions
+                    'engagement': int(row['metricValues'][3]['value'] or 0),   # eventCount
+                    'reach': int(row['metricValues'][1]['value'] or 0),        # activeUsers
                     'conversions': 0,
                     'leads': 0,
-                    'spend': float(row['metricValues'][4]['value'] or 0),
-                    'revenue': float(row['metricValues'][5]['value'] or 0),
+                    'spend': 0.0,
+                    'revenue': float(row['metricValues'][4]['value'] or 0),    # totalRevenue
                     'video_views': 0,
                     'roi': 0,
                     'roas': 0,
