@@ -164,6 +164,10 @@ class User(AbstractBaseUser, PermissionsMixin):
             if self.is_active:
                 perms.add('profile:view')
                 perms.add('dashboard:view')
+                
+            # 4. Implicit permissions for managers
+            if self.role in ['manager', 'sub_manager']:
+                perms.update(['staff:view', 'staff:create', 'staff:edit'])
 
             self._all_permissions_cache = perms
         return self._all_permissions_cache
