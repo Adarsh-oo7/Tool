@@ -159,9 +159,9 @@ GOOGLE_CLIENT_SECRET = config("GOOGLE_CLIENT_SECRET", default="").strip()
 GOOGLE_REDIRECT_URI = config("GOOGLE_REDIRECT_URI", default="http://localhost:5173/campaigns/integrations/callback").strip()
 
 # Meta Integration (Facebook, Instagram, WhatsApp)
-META_APP_ID = config("META_APP_ID", default="")
-META_APP_SECRET = config("META_APP_SECRET", default="")
-META_REDIRECT_URI = config("META_REDIRECT_URI", default="http://localhost:5173/campaigns/integrations/meta/callback")
+META_APP_ID = config("META_APP_ID", default="").strip()
+META_APP_SECRET = config("META_APP_SECRET", default="").strip()
+META_REDIRECT_URI = config("META_REDIRECT_URI", default="http://localhost:5173/campaigns/integrations/meta/callback").strip()
 
 # Permanent key for token encryption
 INTEGRATION_ENCRYPTION_KEY = config("INTEGRATION_ENCRYPTION_KEY", default="")
