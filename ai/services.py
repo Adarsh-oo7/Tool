@@ -469,36 +469,49 @@ def _chat_glm(prompt, history, context_text, api_key_override=None):
 # ─── Gemini Fallback ──────────────────────────────────────────────────────────
 
 def _chat_gemini_fallback(prompt, context_text):
-    """Simple Gemini fallback using context injection."""
+    """Simple Gemini fallback using direct REST HTTP requests to bypass SDK bugs and gRPC/REST hangs."""
     try:
-        import google.generativeai as genai
+        import requests
         api_key = getattr(settings, 'GEMINI_API_KEY', '')
         if not api_key:
             raise ValueError("GEMINI_API_KEY not configured")
         
-        # Configure transport globally to rest to avoid gRPC connection blocks on Render
-        genai.configure(api_key=api_key, transport='rest')
+        full_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context_text) + f"\n\nUser: {prompt}"
         
-        # Updated model list based on 2026 environment availability
-        models_to_try = ['models/gemini-flash-latest', 'models/gemini-2.0-flash-lite', 'models/gemini-1.5-flash']
+        # We try gemini-1.5-flash as the highly stable standard model
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
         
-        errors = []
-        for model_name in models_to_try:
+        headers = {
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": full_prompt
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        # OS/Socket level strict 15.0 second timeout to 100% protect the Gunicorn worker from hangs
+        response = requests.post(url, json=payload, headers=headers, timeout=15.0)
+        
+        if response.status_code == 200:
+            data = response.json()
             try:
-                model = genai.GenerativeModel(model_name)
-                # Combine system prompt + data + user prompt
-                full_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context_text) + f"\n\nUser: {prompt}"
-                # Enforce a 15-second timeout on Gemini to protect the Gunicorn worker from hangs
-                response = model.generate_content(full_prompt, request_options={"timeout": 15.0})
-                return response.text
-            except Exception as e:
-                errors.append(f"{model_name}: {str(e)}")
-                continue
-        
-        raise RuntimeError(" | ".join(errors))
+                text = data['candidates'][0]['content']['parts'][0]['text']
+                return text.strip()
+            except (KeyError, IndexError) as e:
+                raise RuntimeError(f"Unexpected response structure from Gemini API: {data}")
+        else:
+            raise RuntimeError(f"Gemini API returned status {response.status_code}: {response.text[:300]}")
             
     except Exception as e:
-        raise RuntimeError(f"Gemini fallback failed: {e}")
+        raise RuntimeError(f"Gemini raw HTTP fallback failed: {e}")
 
 
 # ─── Public Entry Point ───────────────────────────────────────────────────────
