@@ -16,15 +16,24 @@ from datetime import timedelta, date
 
 def _leads_context():
     from leads.models import Lead
-    from django.db.models import Count as C
+    from django.db.models import Count as C, Q
     since_7d = timezone.now() - timedelta(days=7)
-    total     = Lead.objects.count()
-    new_7d    = Lead.objects.filter(created_at__gte=since_7d).count()
-    hot       = Lead.objects.filter(is_hot=True).count()
+    
+    metrics = Lead.objects.aggregate(
+        total=C('id'),
+        new_7d=C('id', filter=Q(created_at__gte=since_7d)),
+        hot=C('id', filter=Q(is_hot=True)),
+        converted=C('id', filter=Q(stage='converted'))
+    )
+    
+    total     = metrics['total'] or 0
+    new_7d    = metrics['new_7d'] or 0
+    hot       = metrics['hot'] or 0
+    converted = metrics['converted'] or 0
+    conv_rate = round((converted / total * 100), 1) if total else 0
+
     by_stage  = list(Lead.objects.values('stage').annotate(n=C('id')).order_by('-n'))
     by_source = list(Lead.objects.values('source').annotate(n=C('id')).order_by('-n'))
-    converted = Lead.objects.filter(stage='converted').count()
-    conv_rate = round((converted / total * 100), 1) if total else 0
 
     hot_leads = list(Lead.objects.filter(is_hot=True)
                      .select_related('assigned_to', 'branch')
@@ -139,23 +148,31 @@ def _staff_context():
         role__in=['staff', 'manager', 'sub_manager', 'telecaller', 'field_staff']
     ).select_related('branch')
 
-    # Since we need 30d specific counts, simple annotation on staff might be tricky 
-    # but we can at least optimize the queries.
+    # Fetch all leads counted by staff in one query
+    lead_counts = Lead.objects.filter(
+        created_at__gte=since_30d,
+        assigned_to__in=staff
+    ).values('assigned_to').annotate(c=C('id'))
+    lead_map = {x['assigned_to']: x['c'] for x in lead_counts}
+
+    # Fetch all sales counted and summed by staff in one query
+    sales_data = Sale.objects.filter(
+        created_at__gte=since_30d,
+        staff__in=staff
+    ).values('staff').annotate(c=C('id'), r=Sum('amount'))
+    sales_map = {x['staff']: (x['c'], x['r']) for x in sales_data}
+
     performers = []
     for u in staff:
-        # These are still potentially slow but better than before
-        leads = Lead.objects.filter(assigned_to=u, created_at__gte=since_30d).count()
-        sales_data = Sale.objects.filter(staff=u, created_at__gte=since_30d).aggregate(
-            count=C('id'), rev=Sum('amount')
-        )
-        sales = sales_data['count'] or 0
-        amt   = normalize_grams(sales_data['rev'])
+        leads = lead_map.get(u.id, 0)
+        s_count, s_rev = sales_map.get(u.id, (0, 0))
+        amt   = normalize_grams(s_rev)
         
-        if leads or sales:
+        if leads or s_count:
             performers.append({
                 "name": u.full_name, "role": u.role,
                 "branch": u.branch.name if u.branch else "—",
-                "leads_30d": leads, "sales_30d": sales, "gold_sold_30d_g": amt
+                "leads_30d": leads, "sales_30d": s_count, "gold_sold_30d_g": amt
             })
     
     performers.sort(key=lambda x: x['gold_sold_30d_g'], reverse=True)
@@ -208,28 +225,38 @@ def _anniversaries_context(days=30):
 
 def _integrations_context():
     try:
-        from campaigns.models import Integration
+        from campaigns.models import Integration, IntegrationAnalytics
         from django.db.models import Sum
         now = timezone.now()
+        since_30d = now - timedelta(days=30)
+        
+        integrations = list(Integration.objects.all())
+        
+        # Aggregate analytics in a single query
+        analytics_data = IntegrationAnalytics.objects.filter(
+            date__gte=since_30d,
+            integration__in=integrations
+        ).values('integration').annotate(
+            imp=Sum('impressions'), clk=Sum('clicks'),
+            spd=Sum('spend'), rev=Sum('revenue')
+        )
+        
+        analytics_map = {
+            x['integration']: x for x in analytics_data
+        }
         
         results = []
-        for i in Integration.objects.all():
-            # Just get the 30d summary, skip the daily trend for now to save time/space
-            since_30d = now - timedelta(days=30)
-            metrics = i.analytics.filter(date__gte=since_30d).aggregate(
-                imp=Sum('impressions'), clk=Sum('clicks'), 
-                spd=Sum('spend'), rev=Sum('revenue')
-            )
-            
+        for i in integrations:
+            metrics = analytics_map.get(i.id, {})
             results.append({
                 "platform": i.get_platform_display(),
                 "account": i.account_name,
                 "status": i.sync_status,
                 "summary_30d": {
-                    "impressions": metrics['imp'] or 0,
-                    "clicks": metrics['clk'] or 0,
-                    "spend": float(metrics['spd'] or 0),
-                    "gold_sold_g": normalize_grams(metrics['rev']),
+                    "impressions": metrics.get('imp') or 0,
+                    "clicks": metrics.get('clk') or 0,
+                    "spend": float(metrics.get('spd') or 0),
+                    "gold_sold_g": normalize_grams(metrics.get('rev')),
                 }
             })
         return results
