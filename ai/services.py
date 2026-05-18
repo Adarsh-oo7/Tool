@@ -425,9 +425,12 @@ def _chat_glm(prompt, history, context_text, api_key_override=None):
             
             # Retry on 429 (Concurrency) or 503 (Service Unavailable)
             if resp.status_code in (429, 503):
-                wait_time = (i + 1) * 8  # Increased wait: 8s, 16s
-                time.sleep(wait_time) 
-                continue
+                # Only sleep if there is still another retry attempt left
+                if i < max_retries - 1:
+                    time.sleep(5)  # brief wait before retry
+                    continue
+                else:
+                    break  # last attempt — exit immediately to trigger Gemini fallback
             
             break # Other errors (400, 401, etc.), don't retry
         except requests.exceptions.Timeout:
@@ -559,7 +562,6 @@ def chat_with_ai(prompt, history=[]):
     else:
         print("AI Service: Using cached context.")
 
-    # ── Try GLM-5.1 first ───────────────────────────────────────────────────
     # ── Try GLM-5.1 (Primary) ───────────────────────────────────────────────
     if glm_key:
         try:
