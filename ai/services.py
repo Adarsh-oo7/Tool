@@ -478,9 +478,6 @@ def _chat_gemini_fallback(prompt, context_text):
         
         full_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context_text) + f"\n\nUser: {prompt}"
         
-        # We try gemini-1.5-flash as the highly stable standard model
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-        
         headers = {
             "Content-Type": "application/json"
         }
@@ -497,18 +494,30 @@ def _chat_gemini_fallback(prompt, context_text):
             ]
         }
         
-        # OS/Socket level strict 15.0 second timeout to 100% protect the Gunicorn worker from hangs
-        response = requests.post(url, json=payload, headers=headers, timeout=15.0)
+        # In 2026, the active models on Google AI Studio are gemini-2.5-flash and gemini-2.0-flash
+        models = ['gemini-2.5-flash', 'gemini-2.0-flash']
+        errors = []
         
-        if response.status_code == 200:
-            data = response.json()
+        for model in models:
             try:
-                text = data['candidates'][0]['content']['parts'][0]['text']
-                return text.strip()
-            except (KeyError, IndexError) as e:
-                raise RuntimeError(f"Unexpected response structure from Gemini API: {data}")
-        else:
-            raise RuntimeError(f"Gemini API returned status {response.status_code}: {response.text[:300]}")
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                # OS/Socket level strict 15.0 second timeout to protect the Gunicorn worker
+                response = requests.post(url, json=payload, headers=headers, timeout=15.0)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    try:
+                        text = data['candidates'][0]['content']['parts'][0]['text']
+                        return text.strip()
+                    except (KeyError, IndexError) as e:
+                        errors.append(f"{model}: Unexpected structure {data}")
+                else:
+                    errors.append(f"{model}: Status {response.status_code} - {response.text[:150]}")
+            except Exception as e:
+                errors.append(f"{model}: {str(e)}")
+                continue
+                
+        raise RuntimeError(" | ".join(errors))
             
     except Exception as e:
         raise RuntimeError(f"Gemini raw HTTP fallback failed: {e}")
