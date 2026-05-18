@@ -631,6 +631,24 @@ class IntegrationViewSet(viewsets.ModelViewSet):
         serializer = IntegrationAnalyticsSerializer(analytics_qs, many=True)
         return Response(serializer.data)
 
+    @action(detail=True, methods=['get'], url_path='latest-posts')
+    def latest_posts(self, request, pk=None):
+        """GET /api/v1/campaigns/integrations/{id}/latest-posts/ — get latest posts/feed."""
+        integration = self.get_object()
+        
+        if not integration.is_connected:
+            return Response({'detail': 'Integration not connected.'}, status=400)
+            
+        service = self._get_service(integration)
+        if not service:
+            return Response({'detail': 'Service not available.'}, status=400)
+            
+        try:
+            posts = service.get_latest_posts(limit=5)
+            return Response(posts)
+        except Exception as e:
+            return Response({'detail': f'Failed to fetch latest posts: {str(e)}'}, status=400)
+
 
     def _get_service(self, integration):
         """Get the appropriate service class for the platform."""

@@ -88,3 +88,80 @@ class FacebookAdsService(BaseIntegrationService):
 
     def validate_connection(self) -> bool:
         return self.integration.is_connected and bool(self.integration.access_token)
+
+    def get_latest_posts(self, limit: int = 5) -> list:
+        """
+        Fetch latest posts/feed from the connected Facebook Page or Instagram Business Account.
+        """
+        import requests
+        access_token = self.integration.get_access_token()
+        if not access_token:
+            return []
+            
+        page_id = self.integration.metadata.get('page_id')
+        instagram_id = self.integration.metadata.get('instagram_id')
+        
+        # If Instagram Business Account is linked, fetch IG Media
+        if instagram_id:
+            try:
+                url = f"https://graph.facebook.com/v19.0/{instagram_id}/media"
+                params = {
+                    'fields': 'id,caption,media_type,media_url,permalink,timestamp,like_count,comments_count',
+                    'limit': limit,
+                    'access_token': access_token
+                }
+                res = requests.get(url, params=params)
+                if res.status_code == 200:
+                    data = res.json()
+                    posts = []
+                    for item in data.get('data', []):
+                        posts.append({
+                            'id': item.get('id'),
+                            'caption': item.get('caption', 'No caption'),
+                            'media_type': item.get('media_type'),
+                            'media_url': item.get('media_url'),
+                            'permalink': item.get('permalink'),
+                            'created_time': item.get('timestamp'),
+                            'likes': item.get('like_count', 0),
+                            'comments': item.get('comments_count', 0),
+                            'platform': 'instagram'
+                        })
+                    return posts
+            except Exception as e:
+                print(f"Error fetching IG posts: {e}")
+                
+        # Fallback to Facebook Page feed
+        if page_id:
+            try:
+                url = f"https://graph.facebook.com/v19.0/{page_id}/feed"
+                params = {
+                    'fields': 'id,message,created_time,permalink_url,full_picture,shares,likes.summary(true),comments.summary(true)',
+                    'limit': limit,
+                    'access_token': access_token
+                }
+                res = requests.get(url, params=params)
+                if res.status_code == 200:
+                    data = res.json()
+                    posts = []
+                    for item in data.get('data', []):
+                        likes_count = item.get('likes', {}).get('summary', {}).get('total_count', 0)
+                        comments_count = item.get('comments', {}).get('summary', {}).get('total_count', 0)
+                        shares_count = item.get('shares', {}).get('count', 0)
+                        
+                        posts.append({
+                            'id': item.get('id'),
+                            'caption': item.get('message', 'No message'),
+                            'media_type': 'IMAGE' if item.get('full_picture') else 'STATUS',
+                            'media_url': item.get('full_picture'),
+                            'permalink': item.get('permalink_url'),
+                            'created_time': item.get('created_time'),
+                            'likes': likes_count,
+                            'comments': comments_count,
+                            'shares': shares_count,
+                            'platform': 'facebook'
+                        })
+                    return posts
+            except Exception as e:
+                print(f"Error fetching FB posts: {e}")
+                
+        return []

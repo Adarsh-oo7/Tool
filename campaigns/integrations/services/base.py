@@ -162,3 +162,7 @@ class BaseIntegrationService(ABC):
             'avg_roas': float(summary['avg_roas'] or 0),
             'days': days
         }
+
+    def get_latest_posts(self, limit: int = 5) -> list:
+        """Get latest posts from the platform."""
+        return []
