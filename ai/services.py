@@ -368,11 +368,12 @@ def _chat_glm(prompt, history, context_text, api_key_override=None):
     messages.append({"role": "user", "content": prompt})
 
     # GLM-5.1 is a reasoning model. We'll set a fail-fast timeout.
-    # If it takes more than 60s, we retry. After 2 retries, we fallback to Gemini.
-    timeout = 60
+    # Render has a strict 30s request timeout, so we must fail fast (e.g. 20s)
+    # to allow Django to fallback to Gemini or return a proper response within 30s.
+    timeout = 20
 
     # Handle concurrency (429) and temporary service errors (503)
-    max_retries = 3
+    max_retries = 2
     last_resp = None
     
     for i in range(max_retries):
@@ -397,17 +398,15 @@ def _chat_glm(prompt, history, context_text, api_key_override=None):
             
             # Retry on 429 (Concurrency) or 503 (Service Unavailable)
             if resp.status_code in (429, 503):
-                wait_time = (i + 1) * 8  # Increased wait: 8s, 16s, 24s
+                wait_time = (i + 1) * 8  # Increased wait: 8s, 16s
                 time.sleep(wait_time) 
                 continue
             
             break # Other errors (400, 401, etc.), don't retry
         except requests.exceptions.Timeout:
-            if i < max_retries - 1:
-                continue
+            # Do not retry on timeout; raise immediately to trigger fast Gemini fallback
             raise RuntimeError(
-                "TIMEOUT: GLM response timed out. The reasoning model is currently slow. "
-                "Please wait a moment and try again."
+                "TIMEOUT: GLM response timed out. The reasoning model is currently slow."
             )
         except Exception as e:
             if i < max_retries - 1:
