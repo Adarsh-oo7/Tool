@@ -45,6 +45,13 @@ class BaseIntegrationService(ABC):
         """
         pass
     
+    def get_available_properties(self) -> list:
+        """
+        Optional: Fetch all available properties/accounts under this integration.
+        Returns a list of dicts with 'id', 'name', and 'account_name'.
+        """
+        return []
+
     def is_token_expired(self) -> bool:
         """Check if the access token is expired or will expire soon."""
         if not self.integration.token_expiry:

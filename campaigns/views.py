@@ -328,6 +328,49 @@ class IntegrationViewSet(viewsets.ModelViewSet):
         
         return Response({'detail': 'Integration disconnected successfully.'})
 
+    @action(detail=True, methods=['get'], url_path='properties')
+    def properties(self, request, pk=None):
+        """GET /api/v1/campaigns/integrations/{id}/properties/ — list available properties/accounts."""
+        integration = self.get_object()
+        service = self._get_service(integration)
+        if not service:
+            return Response({'detail': 'Service not available.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            properties = service.get_available_properties()
+            return Response(properties)
+        except Exception as e:
+            return Response({'detail': f'Failed to fetch properties: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], url_path='select-property')
+    def select_property(self, request, pk=None):
+        """POST /api/v1/campaigns/integrations/{id}/select-property/ — select active property/account."""
+        integration = self.get_object()
+        property_id = request.data.get('property_id')
+        property_name = request.data.get('property_name')
+        
+        if not property_id or not property_name:
+            return Response({'detail': 'property_id and property_name are required.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        integration.account_id = property_id
+        integration.account_name = property_name
+        integration.sync_status = 'idle'
+        integration.save(update_fields=['account_id', 'account_name', 'sync_status'])
+        
+        # Trigger immediate sync
+        service = self._get_service(integration)
+        if service:
+            try:
+                service.sync_analytics()
+            except Exception as e:
+                pass
+                
+        return Response({
+            'detail': 'Property updated and sync triggered successfully.',
+            'account_id': property_id,
+            'account_name': property_name
+        })
+
     @action(detail=False, methods=['get'], url_path='oauth-url')
     def oauth_url(self, request):
         """GET /api/v1/campaigns/integrations/oauth-url/?platform=...&redirect_uri=..."""

@@ -162,6 +162,39 @@ class GoogleAnalyticsService(BaseIntegrationService):
         
         return analytics_by_date
     
+    def get_available_properties(self) -> list:
+        """
+        Fetch all available GA4 properties under the connected account.
+        """
+        access_token = self.integration.get_access_token()
+        if not access_token:
+            return []
+            
+        headers = {'Authorization': f'Bearer {access_token}'}
+        
+        try:
+            response = requests.get(
+                'https://analyticsadmin.googleapis.com/v1beta/accountSummaries',
+                headers=headers
+            )
+            if response.status_code == 200:
+                data = response.json()
+                properties = []
+                if data.get('accountSummaries'):
+                    for account in data['accountSummaries']:
+                        if account.get('propertySummaries'):
+                            for prop in account['propertySummaries']:
+                                prop_id = prop.get('property', '').replace('properties/', '')
+                                properties.append({
+                                    'id': prop_id,
+                                    'name': prop.get('displayName', 'Unnamed Property'),
+                                    'account_name': account.get('displayName', 'Unnamed Account')
+                                })
+                return properties
+        except Exception as e:
+            print(f"Error fetching available GA4 properties: {e}")
+        return []
+
     def validate_connection(self) -> bool:
         """
         Validate Google Analytics connection.
