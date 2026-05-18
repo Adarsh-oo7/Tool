@@ -186,19 +186,24 @@ class GoogleAnalyticsService(BaseIntegrationService):
     
     def _fetch_account_info(self, access_token: str) -> Dict[str, Any]:
         """
-        Fetch Google Analytics account information.
+        Fetch Google Analytics GA4 property information.
         """
         headers = {'Authorization': f'Bearer {access_token}'}
         
-        # List accounts
+        # List properties (GA4)
         response = requests.get(
-            'https://analyticsadmin.googleapis.com/v1beta/accounts',
+            'https://analyticsadmin.googleapis.com/v1beta/properties',
             headers=headers
         )
         
         if response.status_code == 200:
             data = response.json()
-            if data.get('accounts'):
-                return data['accounts'][0]
+            if data.get('properties'):
+                prop = data['properties'][0]
+                prop_id = prop.get('name', '').replace('properties/', '')
+                return {
+                    'accountName': prop.get('displayName', 'Google Analytics Property'),
+                    'accountId': prop_id
+                }
         
         return {}
