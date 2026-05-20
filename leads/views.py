@@ -47,12 +47,12 @@ class CustomerViewSet(viewsets.ModelViewSet):
         return CustomerSerializer
 
     def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            # Only owner/manager can modify
+        if self.action == 'destroy':
+            # Only owner/manager can delete
             user = self.request.user
             if user.role not in ['owner', 'admin', 'manager', 'sub_manager'] and not user.is_superuser:
                 from rest_framework.exceptions import PermissionDenied
-                raise PermissionDenied("Only owners and managers can modify customer profiles")
+                raise PermissionDenied("Only owners and managers can delete customer profiles")
         return super().get_permissions()
 
     @action(detail=False, methods=['get'], url_path='by-phone/(?P<phone>[^/]+)')
