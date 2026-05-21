@@ -38,7 +38,7 @@ class FieldVisitViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         # Allow managers/owners to assign visits, otherwise default to current user
         staff = self.request.user
-        if self.request.user.role in ['owner', 'manager'] and self.request.data.get('staff'):
+        if self.request.user.role in ['owner', 'manager', 'sub_manager'] and self.request.data.get('staff'):
             from django.contrib.auth import get_user_model
             User = get_user_model()
             try:
@@ -46,10 +46,31 @@ class FieldVisitViewSet(viewsets.ModelViewSet):
             except User.DoesNotExist:
                 pass
         
-        serializer.save(
+        # Handle scheduled_date from request
+        scheduled_date = self.request.data.get('scheduled_date') or None
+        notes = self.request.data.get('notes', '')
+
+        visit = serializer.save(
             staff=staff,
             branch=staff.branch or self.request.user.branch or None,
+            scheduled_date=scheduled_date,
+            notes=notes,
         )
+
+        # Log activity on the lead
+        try:
+            from leads.models import LeadActivity
+            assigner = self.request.user
+            LeadActivity.objects.create(
+                lead=visit.lead,
+                actor=assigner,
+                action='field_visit_assigned',
+                detail=f'Field visit assigned to {staff.full_name}' + (
+                    f' (scheduled: {scheduled_date})' if scheduled_date else ' (immediate)'
+                )
+            )
+        except Exception:
+            pass  # Don't block the visit creation if logging fails
 
     @action(detail=True, methods=['post'], url_path='start')
     def start_visit(self, request, pk=None):

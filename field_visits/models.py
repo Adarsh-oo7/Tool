@@ -26,9 +26,11 @@ class FieldVisit(models.Model):
     # Visit details
     status     = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
     started_at = models.DateTimeField(auto_now_add=True)
+    scheduled_date = models.DateTimeField(null=True, blank=True, help_text="Planned date for the visit")
     ended_at   = models.DateTimeField(null=True, blank=True)
     distance_km = models.FloatField(null=True, blank=True, help_text="Total distance traveled in km")
     duration_minutes = models.IntegerField(null=True, blank=True, help_text="Visit duration in minutes")
+    notes      = models.TextField(blank=True, help_text="Instructions or notes for the field staff")
 
     class Meta:
         ordering = ['-started_at']

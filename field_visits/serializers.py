@@ -34,7 +34,9 @@ class FieldVisitSerializer(serializers.ModelSerializer):
     location_updates = LocationTrackingSerializer(many=True, read_only=True)
     report          = VisitReportSerializer(read_only=True)
     staff_name      = serializers.CharField(source='staff.full_name', read_only=True)
+    staff_phone     = serializers.CharField(source='staff.phone', read_only=True)
     lead_name       = serializers.CharField(source='lead.name', read_only=True)
+    lead_phone      = serializers.CharField(source='lead.phone', read_only=True)
     lead_lat        = serializers.DecimalField(source='lead.lat', max_digits=10, decimal_places=7, read_only=True)
     lead_lng        = serializers.DecimalField(source='lead.lng', max_digits=10, decimal_places=7, read_only=True)
     branch_name     = serializers.CharField(source='branch.name', read_only=True)
@@ -43,7 +45,8 @@ class FieldVisitSerializer(serializers.ModelSerializer):
     class Meta:
         model  = FieldVisit
         fields = ['id', 'lead', 'staff', 'branch', 'status', 'status_display',
-                  'started_at', 'ended_at', 'distance_km', 'duration_minutes',
-                  'checkins', 'location_updates', 'report', 'staff_name', 'lead_name', 
-                  'lead_lat', 'lead_lng', 'branch_name']
+                  'started_at', 'scheduled_date', 'ended_at', 'distance_km', 'duration_minutes',
+                  'notes', 'checkins', 'location_updates', 'report', 
+                  'staff_name', 'staff_phone', 'lead_name', 'lead_phone',
+                  'lead_lat', 'lead_lng', 'branch_name', 'start_lat', 'start_lng', 'end_lat', 'end_lng']
         read_only_fields = ['id', 'started_at', 'ended_at', 'distance_km', 'duration_minutes']
