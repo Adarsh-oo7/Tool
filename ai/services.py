@@ -373,9 +373,9 @@ def _increment_usage():
 # ─── GLM-5.1 Chat (OpenAI-compatible) ────────────────────────────────────────
 
 def _chat_glm(prompt, history, context_text, api_key_override=None):
-    api_key = api_key_override or getattr(settings, 'GLM_API_KEY', '')
-    api_url = getattr(settings, 'GLM_API_URL', 'https://api.us-west-2.modal.direct/v1')
-    model   = getattr(settings, 'GLM_MODEL',   'zai-org/GLM-5.1-FP8')
+    api_key = (api_key_override or getattr(settings, 'GLM_API_KEY', '')).strip(' "\'\r\n')
+    api_url = getattr(settings, 'GLM_API_URL', 'https://api.us-west-2.modal.direct/v1').strip(' "\'\r\n')
+    model   = getattr(settings, 'GLM_MODEL',   'zai-org/GLM-5.1-FP8').strip(' "\'\r\n')
 
     if not api_key:
         raise ValueError("GLM_API_KEY not configured")
@@ -477,7 +477,7 @@ def _chat_gemini_fallback(prompt, context_text):
     """Simple Gemini fallback using direct REST HTTP requests to bypass SDK bugs and gRPC/REST hangs."""
     try:
         import requests
-        api_key = getattr(settings, 'GEMINI_API_KEY', '')
+        api_key = getattr(settings, 'GEMINI_API_KEY', '').strip(' "\'\r\n')
         if not api_key:
             raise ValueError("GEMINI_API_KEY not configured")
         
@@ -537,8 +537,8 @@ def chat_with_ai(prompt, history=[]):
     """
     from django.core.cache import cache
     
-    glm_key    = getattr(settings, 'GLM_API_KEY', '')
-    gemini_key = getattr(settings, 'GEMINI_API_KEY', '')
+    glm_key    = getattr(settings, 'GLM_API_KEY', '').strip(' "\'\r\n')
+    gemini_key = getattr(settings, 'GEMINI_API_KEY', '').strip(' "\'\r\n')
 
     if not glm_key and not gemini_key:
         return (
