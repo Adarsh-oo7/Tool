@@ -395,8 +395,8 @@ def _chat_glm(prompt, history, context_text, api_key_override=None):
     messages.append({"role": "user", "content": prompt})
 
     # With the new StreamingHttpResponse heartbeat hack in ai/views.py, Render's 100s limit is safely bypassed!
-    # We can now allow GLM a full 160s to think (since Modal throttles it to 136s).
-    timeout = 160
+    # We can now allow GLM a full 300s (5 minutes) to think. Slow response times are no longer a problem!
+    timeout = 300
 
     # 3 attempts. This is safe because Timeouts do NOT retry, so we only retry on fast 429/503 errors!
     max_retries = 3
