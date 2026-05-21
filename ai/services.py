@@ -401,8 +401,8 @@ def _chat_glm(prompt, history, context_text, api_key_override=None):
     # We can now allow GLM a full 300s (5 minutes) to think. Slow response times are no longer a problem!
     timeout = 300
 
-    # 3 attempts. This is safe because Timeouts do NOT retry, so we only retry on fast 429/503 errors!
-    max_retries = 3
+    # 5 attempts. This is safe because Timeouts do NOT retry, so we only retry on fast 429/503 errors!
+    max_retries = 5
     last_resp = None
     
     for i in range(max_retries):
@@ -428,8 +428,8 @@ def _chat_glm(prompt, history, context_text, api_key_override=None):
             # Retry on 429 (rate limit) or 503 (service unavailable / Modal overloaded)
             if resp.status_code in (429, 503):
                 if i < max_retries - 1:
-                    # Exponential backoff for 429 (concurrent requests) to give previous req time to finish
-                    wait_time = 5 if resp.status_code == 503 else (4 * (i + 1))
+                    # Exponential backoff: 5s, 10s, 15s, 20s to allow the GPU concurrent queue to clear
+                    wait_time = 5 if resp.status_code == 503 else (5 * (i + 1))
                     print(f"AI Service: GLM {resp.status_code}, retrying in {wait_time}s (attempt {i+1}/{max_retries})...")
                     time.sleep(wait_time)
                     continue
