@@ -397,8 +397,8 @@ def _chat_glm(prompt, history, context_text, api_key_override=None):
     # We limit GLM to 65s and disable retries to prevent Gunicorn SIGKILLs and Render timeouts.
     timeout = 65
 
-    # 1 attempt only. If it fails or times out, we instantly fall back to Gemini.
-    max_retries = 1
+    # 3 attempts. This is safe because Timeouts do NOT retry, so we only retry on fast 429/503 errors!
+    max_retries = 3
     last_resp = None
     
     for i in range(max_retries):
@@ -424,8 +424,8 @@ def _chat_glm(prompt, history, context_text, api_key_override=None):
             # Retry on 429 (rate limit) or 503 (service unavailable / Modal overloaded)
             if resp.status_code in (429, 503):
                 if i < max_retries - 1:
-                    # 503 from Modal often clears in a few seconds; 429 needs a bit longer
-                    wait_time = 5 if resp.status_code == 503 else 3
+                    # 503 often clears in a few seconds; 429 (concurrent requests) needs time for the previous req to finish
+                    wait_time = 5 if resp.status_code == 503 else 5
                     print(f"AI Service: GLM {resp.status_code}, retrying in {wait_time}s (attempt {i+1}/{max_retries})...")
                     time.sleep(wait_time)
                     continue
