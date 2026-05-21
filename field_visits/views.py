@@ -132,6 +132,37 @@ class FieldVisitViewSet(viewsets.ModelViewSet):
             'timestamp': checkin.timestamp
         })
 
+    @action(detail=True, methods=['post'], url_path='reached-client')
+    def reached_client(self, request, pk=None):
+        """Mark as reached client, record GPS, and update lead/customer location."""
+        visit = self.get_object()
+        
+        if visit.status != 'active':
+            return Response({'detail': 'Visit is not active.'}, status=400)
+
+        lat = request.data.get('lat')
+        lng = request.data.get('lng')
+        
+        if not lat or not lng:
+            return Response({'detail': 'GPS coordinates required'}, status=400)
+
+        # 1. Create a Check-In
+        GPSCheckIn.objects.create(visit=visit, lat=lat, lng=lng, address="Reached Client")
+        
+        # 2. Update Lead location
+        lead = visit.lead
+        lead.lat = lat
+        lead.lng = lng
+        lead.save(update_fields=['lat', 'lng'])
+        
+        # 3. Update Customer location if attached
+        if lead.customer:
+            lead.customer.lat = lat
+            lead.customer.lng = lng
+            lead.customer.save(update_fields=['lat', 'lng'])
+            
+        return Response({'detail': 'Client location updated successfully'})
+
     @action(detail=True, methods=['post'], url_path='end')
     def end_visit(self, request, pk=None):
         """End visit with final GPS location"""
@@ -155,6 +186,51 @@ class FieldVisitViewSet(viewsets.ModelViewSet):
             visit.end_lng = lng
         
         visit.save()
+
+        # Handle Report Data
+        outcome = request.data.get('outcome', 'interested')
+        notes = request.data.get('notes', '')
+        VisitReport.objects.update_or_create(
+            visit=visit,
+            defaults={
+                'outcome': outcome,
+                'notes': notes,
+                'time_spent_minutes': visit.duration_minutes or 0
+            }
+        )
+
+        # Update Lead (Advance Booking / Grams)
+        lead = visit.lead
+        expected_grams = request.data.get('expected_grams')
+        is_advance_booking = request.data.get('is_advance_booking')
+        
+        update_lead = False
+        if expected_grams is not None:
+            lead.approx_grams = str(expected_grams)
+            update_lead = True
+        if is_advance_booking:
+            # We can use lead notes or product_interest to store advance booking state if no explicit field exists
+            lead.notes = f"{lead.notes}\n[Advance Booking Made]".strip()
+            if outcome != 'converted':
+                # If they made an advance booking, they are basically converted
+                pass
+            update_lead = True
+            
+        if update_lead:
+            lead.save()
+
+        # Handle Follow-up
+        if request.data.get('needs_followup'):
+            from leads.models import FollowUp
+            FollowUp.objects.create(
+                lead=lead,
+                followup_type=request.data.get('followup_type', 'call'),
+                scheduled_date=request.data.get('followup_date'),
+                note=request.data.get('followup_notes', ''),
+                priority='high',
+                created_by=request.user,
+                assigned_to=request.user
+            )
         
         return Response({
             'detail': 'Visit completed successfully',
