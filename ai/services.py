@@ -530,6 +530,12 @@ def _chat_gemini_fallback(prompt, context_text):
 
 # ─── Public Entry Point ───────────────────────────────────────────────────────
 
+def _is_simple_conversational(prompt):
+    p = prompt.lower().strip(' ?.!\r\n')
+    # If the prompt is short or a standard greeting, do not load the massive CRM context.
+    greetings = {'hi', 'hello', 'hey', 'test', 'yo', 'status', 'ping', 'who are you', 'how are you', 'help'}
+    return p in greetings or len(p) < 10
+
 def chat_with_ai(prompt, history=[]):
     """
     Main AI chat function with context caching.
@@ -548,21 +554,25 @@ def chat_with_ai(prompt, history=[]):
     # ── Context Caching ──────────────────────────────────────────────────────
     # We cache the heavy CRM context for 2 minutes to prevent timeouts.
     # We use a global key for now, as context is currently shared (admin data).
-    cache_key = "ai_crm_context_cache"
-    context_text = cache.get(cache_key)
-    
-    if not context_text:
-        try:
-            print("AI Service: Cache miss, building fresh context...")
-            ctx = build_crm_context()
-            context_text = _format_context_as_text(ctx)
-            # Cache for 120 seconds (2 mins)
-            cache.set(cache_key, context_text, 120)
-        except Exception as e:
-            print(f"AI Service: Context building failed: {e}")
-            context_text = f'{{"error": "Could not load CRM data: {e}"}}'
+    if _is_simple_conversational(prompt):
+        print("AI Service: Conversational prompt detected. Skipping heavy CRM context load.")
+        context_text = "The user is saying a simple greeting or brief message. Respond in a friendly, conversational manner as a CRM business assistant."
     else:
-        print("AI Service: Using cached context.")
+        cache_key = "ai_crm_context_cache"
+        context_text = cache.get(cache_key)
+        
+        if not context_text:
+            try:
+                print("AI Service: Cache miss, building fresh context...")
+                ctx = build_crm_context()
+                context_text = _format_context_as_text(ctx)
+                # Cache for 120 seconds (2 mins)
+                cache.set(cache_key, context_text, 120)
+            except Exception as e:
+                print(f"AI Service: Context building failed: {e}")
+                context_text = f'{{"error": "Could not load CRM data: {e}"}}'
+        else:
+            print("AI Service: Using cached context.")
 
     # ── Try GLM-5.1 (Primary) ───────────────────────────────────────────────
     if glm_key:
