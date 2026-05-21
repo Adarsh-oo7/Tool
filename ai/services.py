@@ -394,9 +394,9 @@ def _chat_glm(prompt, history, context_text, api_key_override=None):
             messages.append({"role": role, "content": str(content)})
     messages.append({"role": "user", "content": prompt})
 
-    # Render Load Balancer limit is 100s, but locally we have no limit.
-    # We allow 150s locally because Modal is currently taking 136+ seconds to respond.
-    timeout = 150 if getattr(settings, 'DEBUG', False) else 65
+    # With the new StreamingHttpResponse heartbeat hack in ai/views.py, Render's 100s limit is safely bypassed!
+    # We can now allow GLM a full 160s to think (since Modal throttles it to 136s).
+    timeout = 160
 
     # 3 attempts. This is safe because Timeouts do NOT retry, so we only retry on fast 429/503 errors!
     max_retries = 3

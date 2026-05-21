@@ -21,58 +21,80 @@ class AIChatView(APIView):
         if not prompt:
             return Response({"error": "Prompt is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            response_text = chat_with_ai(prompt, history)
+        # To prevent Render's 100-second Load Balancer timeout during slow 136s+ GLM requests,
+        # we process the AI in a background thread and stream a "heartbeat" space every 15 seconds.
+        # This keeps the connection alive and resets the Render 100s kill-switch timer continuously!
+        import threading
+        import queue
+        import json
+        from django.http import StreamingHttpResponse
+        from django.db import close_old_connections
 
-            # Detect rate-limit response and return 429 so frontend can handle it
-            is_rate_limited = (
-                'Rate Limit Reached' in response_text or
-                ('rate' in response_text.lower() and 'quota' in response_text.lower())
-            )
-            http_status = status.HTTP_429_TOO_MANY_REQUESTS if is_rate_limited else status.HTTP_200_OK
+        q = queue.Queue()
 
-            return Response({
-                "response": response_text,
-                "role": "assistant",
-                "rate_limited": is_rate_limited,
-            }, status=http_status)
+        def ai_worker():
+            try:
+                close_old_connections()
+                response_text = chat_with_ai(prompt, history)
+                q.put(('result', response_text))
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                q.put(('error', str(e)))
+            finally:
+                close_old_connections()
 
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            err_str = str(e)
+        threading.Thread(target=ai_worker, daemon=True).start()
 
-            # Surface 429 with friendly message
-            if '429' in err_str or 'quota' in err_str.lower() or 'concurrent' in err_str.lower():
-                return Response({
-                    "error": "rate_limit",
-                    "response": (
-                        "⏳ **Rate Limit / Concurrency Reached**\n\n"
-                        "The AI service is currently very busy. "
-                        "Please wait about **30 seconds** and try again.\n\n"
-                        "**Tip:** If you see this often, your daily 100-request limit might be near."
-                    ),
-                    "role": "assistant",
-                    "rate_limited": True,
-                }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        def stream_generator():
+            while True:
+                try:
+                    # Wait 15 seconds. If no result, throw Empty and yield a space!
+                    msg_type, data = q.get(timeout=15)
+                    
+                    if msg_type == 'result':
+                        is_rate_limited = (
+                            'Rate Limit Reached' in data or
+                            ('rate' in data.lower() and 'quota' in data.lower())
+                        )
+                        # Yield the final JSON block
+                        yield json.dumps({
+                            "response": data,
+                            "role": "assistant",
+                            "rate_limited": is_rate_limited
+                        })
+                        break
+                    
+                    elif msg_type == 'error':
+                        err_str = data
+                        if '429' in err_str or 'quota' in err_str.lower() or 'concurrent' in err_str.lower():
+                            yield json.dumps({
+                                "error": "rate_limit",
+                                "response": "⏳ **Rate Limit / Concurrency Reached**\n\nThe AI service is currently very busy. Please wait about **30 seconds** and try again.",
+                                "role": "assistant",
+                                "rate_limited": True
+                            })
+                        elif '503' in err_str:
+                            yield json.dumps({
+                                "error": "service_unavailable",
+                                "response": "🏛️ **AI Service Busy**\n\nThe GLM-5.1 provider is temporarily unavailable (503).",
+                                "role": "assistant"
+                            })
+                        else:
+                            yield json.dumps({
+                                "error": "internal_error",
+                                "detail": f"AI Engine Error: {err_str[:200]}",
+                                "response": "⚠️ **AI Engine Error**: I encountered an issue while processing your request. Please try again in a moment."
+                            })
+                        break
 
-            # Check for GLM 503 errors specifically
-            if '503' in err_str:
-                return Response({
-                    "error": "service_unavailable",
-                    "response": (
-                        "🏛️ **AI Service Busy**\n\n"
-                        "The GLM-5.1 provider is temporarily unavailable (503). "
-                        "I'll automatically try the fallback model if this continues."
-                    ),
-                    "role": "assistant"
-                }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+                except queue.Empty:
+                    # HEARTBEAT: Send a single space character to trick the Render Load Balancer
+                    # into keeping the connection open! Leading spaces are safely ignored by JSON.parse() on the frontend.
+                    yield " "
 
-            return Response({
-                "error": "internal_error",
-                "detail": f"AI Engine Error: {err_str[:200]}",
-                "response": "⚠️ **AI Engine Error**: I encountered an issue while processing your request. Please try again in a moment."
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return StreamingHttpResponse(stream_generator(), content_type='application/json')
+
 
 
 class AISuggestionsView(APIView):
