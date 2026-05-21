@@ -35,15 +35,16 @@ def _leads_context():
     by_stage  = list(Lead.objects.values('stage').annotate(n=C('id')).order_by('-n'))
     by_source = list(Lead.objects.values('source').annotate(n=C('id')).order_by('-n'))
 
+    # Only take top 5 hot leads to keep prompt size tiny
     hot_leads = list(Lead.objects.filter(is_hot=True)
                      .select_related('assigned_to', 'branch')
                      .values('name', 'phone', 'stage', 'source',
-                             'assigned_to__full_name', 'branch__name')[:10])
+                             'assigned_to__full_name', 'branch__name')[:5])
 
     return {
         "total": total, "new_last_7_days": new_7d, "hot": hot,
         "converted": converted, "conversion_rate_pct": conv_rate,
-        "by_stage": by_stage, "by_source": by_source,
+        "by_stage": by_stage[:4], "by_source": by_source[:4],
         "hot_leads_sample": hot_leads
     }
 
@@ -67,16 +68,17 @@ def _sales_context():
     week_sales  = Sale.objects.filter(created_at__gte=since_7d)
     month_sales = Sale.objects.filter(created_at__gte=since_30d)
     
-    recent_sales = list(Sale.objects.filter(created_at__gte=since_30d).order_by('-created_at').values('created_at', 'amount', 'staff__full_name', 'branch__name')[:20])
+    # Only take top 5 recent sales to keep prompt size tiny
+    recent_sales = list(Sale.objects.filter(created_at__gte=since_30d).order_by('-created_at').values('created_at', 'amount', 'staff__full_name', 'branch__name')[:5])
 
-    def fmt(d): return d.strftime('%B %d, %Y')
+    def fmt(d): return d.strftime('%d %b')
 
     return {
         "today":   {"date": fmt(today), "count": today_sales.count(), "gold_sold_g": normalize_grams(today_sales.aggregate(t=Sum('amount'))['t'])},
         "week":    {"start_date": fmt(since_7d), "end_date": fmt(now), "count": week_sales.count(),  "gold_sold_g": normalize_grams(week_sales.aggregate(t=Sum('amount'))['t'])},
         "month":   {"start_date": fmt(since_30d), "end_date": fmt(now), "count": month_sales.count(), "gold_sold_g": normalize_grams(month_sales.aggregate(t=Sum('amount'))['t'])},
         "recent_sales_log": [
-            {"date": r['created_at'].strftime('%b %d, %Y %I:%M %p'), "gold_sold_g": normalize_grams(r['amount']), "staff": r['staff__full_name'], "branch": r['branch__name']}
+            {"date": r['created_at'].strftime('%d %b, %H:%M'), "gold_sold_g": normalize_grams(r['amount']), "staff": r['staff__full_name'], "branch": r['branch__name']}
             for r in recent_sales
         ]
     }
@@ -121,10 +123,11 @@ def _branches_context():
 def _campaigns_context():
     try:
         from campaigns.models import Campaign
+        # Only take top 5 active/recent campaigns to keep prompt tiny
         camps = list(Campaign.objects.values(
-            'name', 'status', 'channel_type', 'objective',
+            'name', 'status', 'channel_type',
             'sent_count', 'total_leads', 'roi_percent'
-        )[:20])
+        )[:5])
         active = sum(1 for c in camps if c.get('status') == 'active')
         total_reach = sum(c.get('sent_count') or 0 for c in camps)
         total_leads = sum(c.get('total_leads') or 0 for c in camps)
@@ -177,9 +180,10 @@ def _staff_context():
     
     performers.sort(key=lambda x: x['gold_sold_30d_g'], reverse=True)
 
+    # Only take top 4 top performers to keep context tiny
     return {
         "total": staff.count(),
-        "top_performers_30d": performers[:8]
+        "top_performers_30d": performers[:4]
     }
 
 
