@@ -394,8 +394,9 @@ def _chat_glm(prompt, history, context_text, api_key_override=None):
             messages.append({"role": role, "content": str(content)})
     messages.append({"role": "user", "content": prompt})
 
-    # We limit GLM to 65s and disable retries to prevent Gunicorn SIGKILLs and Render timeouts.
-    timeout = 65
+    # Render Load Balancer limit is 100s, but locally we have no limit.
+    # We allow 150s locally because Modal is currently taking 136+ seconds to respond.
+    timeout = 150 if getattr(settings, 'DEBUG', False) else 65
 
     # 3 attempts. This is safe because Timeouts do NOT retry, so we only retry on fast 429/503 errors!
     max_retries = 3
