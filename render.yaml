@@ -4,7 +4,7 @@ services:
     env: python
     plan: free
     buildCommand: ./build.sh
-    startCommand: gunicorn bindu_jewellery_backend.wsgi:application --workers 2 --timeout 360
+    startCommand: gunicorn bindu_jewellery_backend.wsgi:application --workers 2 --worker-class gthread --threads 4 --timeout 360
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
