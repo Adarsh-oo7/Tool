@@ -394,13 +394,12 @@ def _chat_glm(prompt, history, context_text, api_key_override=None):
             messages.append({"role": role, "content": str(content)})
     messages.append({"role": "user", "content": prompt})
 
-    # GLM-5.1 is a reasoning model and can be slow (30-90s for complex queries).
-    # Gunicorn is configured with --timeout 120, so we allow 90s here before
-    # giving up and falling back to Gemini.
-    timeout = 90
+    # GLM-5.1 is a reasoning model, but we must stay under Render's 100s Load Balancer timeout
+    # and Gunicorn's 120s timeout. We limit GLM to 50s to leave time for Gemini fallback.
+    timeout = 50
 
-    # 3 attempts to handle transient 503/429 from Modal.com infrastructure
-    max_retries = 3
+    # 2 attempts to handle transient 503/429 from Modal.com infrastructure
+    max_retries = 2
     last_resp = None
     
     for i in range(max_retries):
@@ -427,7 +426,7 @@ def _chat_glm(prompt, history, context_text, api_key_override=None):
             if resp.status_code in (429, 503):
                 if i < max_retries - 1:
                     # 503 from Modal often clears in a few seconds; 429 needs a bit longer
-                    wait_time = 10 if resp.status_code == 503 else 5
+                    wait_time = 5 if resp.status_code == 503 else 3
                     print(f"AI Service: GLM {resp.status_code}, retrying in {wait_time}s (attempt {i+1}/{max_retries})...")
                     time.sleep(wait_time)
                     continue
@@ -507,8 +506,8 @@ def _chat_gemini_fallback(prompt, context_text):
         for model in models:
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-                # OS/Socket level strict 15.0 second timeout to protect the Gunicorn worker
-                response = requests.post(url, json=payload, headers=headers, timeout=15.0)
+                # OS/Socket level strict 10.0 second timeout to protect the Gunicorn worker
+                response = requests.post(url, json=payload, headers=headers, timeout=10.0)
                 
                 if response.status_code == 200:
                     data = response.json()
