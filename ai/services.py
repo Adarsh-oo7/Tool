@@ -587,11 +587,20 @@ def chat_with_ai(prompt, history=[]):
             # If 429 OR 503 (Modal overloaded), try the fallback GLM key before giving up on GLM entirely
             glm_fallback_key = getattr(settings, 'GLM_API_KEY_FALLBACK', '')
             if ('429' in err or '503' in err or 'busy' in err.lower()) and glm_fallback_key:
-                print("AI Service: Primary GLM failed, trying Fallback GLM Key...")
+                print("AI Service: Primary GLM failed, trying Fallback GLM Key 1...")
                 try:
                     return _chat_glm(prompt, history, context_text, api_key_override=glm_fallback_key)
                 except Exception as fe:
-                    err = f"Primary: {err} | Fallback: {str(fe)}"
+                    err = f"Primary: {err} | Fallback 1: {str(fe)}"
+
+            # Try Fallback GLM Key 2 if it's still busy
+            glm_fallback_key_2 = getattr(settings, 'GLM_API_KEY_FALLBACK_2', '')
+            if ('429' in err or '503' in err or 'busy' in err.lower()) and glm_fallback_key_2:
+                print("AI Service: Fallback GLM Key 1 failed, trying Fallback GLM Key 2...")
+                try:
+                    return _chat_glm(prompt, history, context_text, api_key_override=glm_fallback_key_2)
+                except Exception as fe2:
+                    err = f"Primary/Fallback 1: {err} | Fallback 2: {str(fe2)}"
 
             # Don't fall through on auth errors
             if '401' in err or 'Unauthorized' in err:

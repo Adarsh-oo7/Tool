@@ -147,6 +147,7 @@ AWS_S3_REGION_NAME = config("AWS_S3_REGION_NAME", default="ap-south-1")
 # AI Assistant – GLM-5.1 (primary) via Modal.com OpenAI-compatible endpoint
 GLM_API_KEY          = config('GLM_API_KEY',          default='')
 GLM_API_KEY_FALLBACK = config('GLM_API_KEY_FALLBACK', default='')
+GLM_API_KEY_FALLBACK_2 = config('GLM_API_KEY_FALLBACK_2', default='')
 GLM_API_URL          = config('GLM_API_URL',          default='https://api.us-west-2.modal.direct/v1')
 GLM_MODEL            = config('GLM_MODEL',            default='zai-org/GLM-5.1-FP8')
 
