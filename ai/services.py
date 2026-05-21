@@ -424,8 +424,8 @@ def _chat_glm(prompt, history, context_text, api_key_override=None):
             # Retry on 429 (rate limit) or 503 (service unavailable / Modal overloaded)
             if resp.status_code in (429, 503):
                 if i < max_retries - 1:
-                    # 503 often clears in a few seconds; 429 (concurrent requests) needs time for the previous req to finish
-                    wait_time = 5 if resp.status_code == 503 else 5
+                    # Exponential backoff for 429 (concurrent requests) to give previous req time to finish
+                    wait_time = 5 if resp.status_code == 503 else (4 * (i + 1))
                     print(f"AI Service: GLM {resp.status_code}, retrying in {wait_time}s (attempt {i+1}/{max_retries})...")
                     time.sleep(wait_time)
                     continue
