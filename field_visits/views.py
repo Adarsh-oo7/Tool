@@ -207,14 +207,13 @@ class FieldVisitViewSet(viewsets.ModelViewSet):
         is_advance_booking = request.data.get('is_advance_booking')
         
         update_lead = False
-        if expected_grams is not None:
+        if expected_grams not in [None, '']:
             lead.approx_grams = str(expected_grams)
             update_lead = True
         if is_advance_booking:
-            # We can use lead notes or product_interest to store advance booking state if no explicit field exists
-            lead.notes = f"{lead.notes}\n[Advance Booking Made]".strip()
+            current_notes = lead.notes or ''
+            lead.notes = f"{current_notes}\n[Advance Booking Made]".strip()
             if outcome != 'converted':
-                # If they made an advance booking, they are basically converted
                 pass
             update_lead = True
             
@@ -224,13 +223,23 @@ class FieldVisitViewSet(viewsets.ModelViewSet):
         # Handle Follow-up
         if request.data.get('needs_followup'):
             from leads.models import FollowUp
+            from django.utils.dateparse import parse_datetime
+            
             f_date_str = request.data.get('followup_date')
             
             # Default to tomorrow if missing or empty string
             if not f_date_str:
                 f_date = timezone.now() + timezone.timedelta(days=1)
             else:
-                f_date = f_date_str
+                # parse_datetime handles ISO strings nicely
+                parsed = parse_datetime(f_date_str)
+                if parsed:
+                    if timezone.is_naive(parsed):
+                        f_date = timezone.make_aware(parsed)
+                    else:
+                        f_date = parsed
+                else:
+                    f_date = timezone.now() + timezone.timedelta(days=1)
                 
             FollowUp.objects.create(
                 lead=lead,
