@@ -395,8 +395,8 @@ def _chat_glm(prompt, history, context_text, api_key_override=None):
     messages.append({"role": "user", "content": prompt})
 
     # GLM-5.1 is a reasoning model, but we must stay under Render's 100s Load Balancer timeout
-    # and Gunicorn's 120s timeout. We limit GLM to 50s to leave time for Gemini fallback.
-    timeout = 50
+    # We limit GLM to 85s to give it the absolute maximum time to think before Render kills the connection.
+    timeout = 85
 
     # 2 attempts to handle transient 503/429 from Modal.com infrastructure
     max_retries = 2
