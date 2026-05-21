@@ -1,4 +1,5 @@
 from django.utils import timezone
+from django.db import transaction
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -164,6 +165,7 @@ class FieldVisitViewSet(viewsets.ModelViewSet):
         return Response({'detail': 'Client location updated successfully'})
 
     @action(detail=True, methods=['post'], url_path='end')
+    @transaction.atomic
     def end_visit(self, request, pk=None):
         """End visit with final GPS location"""
         visit = self.get_object()
@@ -222,10 +224,18 @@ class FieldVisitViewSet(viewsets.ModelViewSet):
         # Handle Follow-up
         if request.data.get('needs_followup'):
             from leads.models import FollowUp
+            f_date_str = request.data.get('followup_date')
+            
+            # Default to tomorrow if missing or empty string
+            if not f_date_str:
+                f_date = timezone.now() + timezone.timedelta(days=1)
+            else:
+                f_date = f_date_str
+                
             FollowUp.objects.create(
                 lead=lead,
                 followup_type=request.data.get('followup_type', 'call'),
-                scheduled_date=request.data.get('followup_date'),
+                scheduled_date=f_date,
                 note=request.data.get('followup_notes', ''),
                 priority='high',
                 created_by=request.user,
