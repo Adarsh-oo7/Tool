@@ -93,7 +93,12 @@ class AIChatView(APIView):
                     # into keeping the connection open! Leading spaces are safely ignored by JSON.parse() on the frontend.
                     yield " "
 
-        return StreamingHttpResponse(stream_generator(), content_type='application/json')
+        response = StreamingHttpResponse(stream_generator(), content_type='application/json')
+        # CRITICAL: Prevent Nginx and Render's load balancers from buffering the heartbeat spaces!
+        # This forces Nginx to flush every byte immediately, keeping the connection alive.
+        response['X-Accel-Buffering'] = 'no'
+        response['Cache-Control'] = 'no-cache, must-revalidate'
+        return response
 
 
 
