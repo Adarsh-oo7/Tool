@@ -23,6 +23,8 @@ class Customer(models.Model):
     age = models.PositiveIntegerField(null=True, blank=True)
     gender = models.CharField(max_length=20, choices=GENDER_CHOICES, default='not_specified')
     location = models.CharField(max_length=200, blank=True)
+    lat = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    lng = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
     
     # Extended Info from Legacy Data
     father_name = models.CharField(max_length=200, blank=True, null=True)
@@ -160,6 +162,8 @@ class Lead(models.Model):
     recommendations = models.TextField(blank=True, help_text="AI or Staff recommendations")
     referred_by     = models.CharField(max_length=200, blank=True)   # Referral source details
     notes           = models.TextField(blank=True)
+    lat             = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    lng             = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
 
     # Extended Info from Legacy Data
     father_name = models.CharField(max_length=200, blank=True, null=True)
